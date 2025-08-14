@@ -75,6 +75,10 @@ def create_app():
     except Exception as e:
         app.logger.warning(f"No se pudo asegurar administrador por defecto: {e}")
 
+    @app.get("/healthz")
+    def healthz():
+        return "ok", 200
+
     return app
 # ⬇️ Solo se ejecuta si corres el archivo directamente
 if __name__ == '__main__':
