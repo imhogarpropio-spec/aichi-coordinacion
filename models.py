@@ -5,6 +5,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from datetime import datetime
 from pytz import timezone
+from werkzeug.security import check_password_hash, generate_password_hash
 
 
 
@@ -26,6 +27,24 @@ class Usuario(UserMixin, db.Model):
     intentos_fallidos = db.Column(db.Integer, default=0)
     bloqueado_hasta = db.Column(db.DateTime, nullable=True)
     delegacion_id = db.Column(db.Integer, nullable=True)  # <-- NUEVA COLUMNA
+
+    @property
+    def password(self):
+        return self.contraseña
+
+    @password.setter
+    def password(self, value):
+        self.contraseña = value
+
+    # Helpers opcionales (si tu login usa estos helpers, mejor aún)
+    def set_password(self, raw_password: str):
+        self.contraseña = generate_password_hash(raw_password)
+
+    def check_password(self, raw_password: str) -> bool:
+        try:
+            return check_password_hash(self.contraseña, raw_password)
+        except Exception:
+            return False
 
 class Plantel(db.Model):
     id = db.Column(db.Integer, primary_key=True)
