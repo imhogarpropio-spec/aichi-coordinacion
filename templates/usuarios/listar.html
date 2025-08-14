@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block title %}Usuarios registrados{% endblock %}
+
+{% block content %}
+
+<a href="{{ url_for('dashboard_bp.dashboard') }}" class="btn btn-secondary mb-3">
+  ⬅️ Regresar al Menú principal
+</a>
+
+<h4 class="mb-4">Usuarios registrados</h4>
+
+<a href="{{ url_for('usuarios_bp.crear_usuario') }}" class="btn btn-primary mb-3">➕ Crear nuevo usuario</a>
+
+<style>
+  td, th {white-space: nowrap;}
+</style>
+
+<table class="table table-bordered table-striped">
+  <thead class="table-dark">
+    <tr>
+      <th>Nombre</th>
+      <th>Usuario</th>
+      <th>Rol</th>
+      <th>Acciones</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in usuarios %}
+    <tr>
+      <td>{{ u.nombre }}</td>
+      <td>{{ u.correo }}</td>
+      <td>{{ u.rol }}</td>
+      <td>
+        <!-- 🔁 Botón que abre el modal -->
+        <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#resetModal{{ u.id }}">
+          🔁 Reset
+        </button>
+
+        <!-- 🗑️ Eliminar individual -->
+        <form method="POST" action="{{ url_for('usuarios_bp.eliminar_usuario', id=u.id) }}" class="d-inline">
+          <button class="btn btn-danger btn-sm" onclick="return confirm('¿Eliminar usuario?')">🗑️ Eliminar</button>
+        </form>
+      </td>
+    </tr>
+
+    <!-- 🟡 Modal de cambio de contraseña -->
+    <div class="modal fade" id="resetModal{{ u.id }}" tabindex="-1" aria-labelledby="resetModalLabel{{ u.id }}" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <form method="POST" action="{{ url_for('usuarios_bp.resetear_contrasena', id=u.id) }}">
+          <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+              <h5 class="modal-title" id="resetModalLabel{{ u.id }}">Resetear contraseña</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+              <label for="nueva{{ u.id }}" class="form-label">Nueva contraseña:</label>
+              <input type="password" name="nueva" id="nueva{{ u.id }}" class="form-control" required>
+            </div>
+            <div class="modal-footer">
+              <button type="submit" class="btn btn-success">Guardar</button>
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- 🔴 Botón para eliminar todos los usuarios -->
+<form method="POST" action="{{ url_for('usuarios_bp.eliminar_todos_los_usuarios') }}">
+  <button class="btn btn-outline-danger" onclick="return confirm('¿Eliminar TODOS los usuarios?')">🧨 Eliminar todos</button>
+</form>
+
+{% endblock %}

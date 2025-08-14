@@ -1,0 +1,63 @@
+### templates/usuarios/crear.html
+
+```html
+{% extends 'base.html' %}
+{% block title %}Crear Usuario{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h4>Crear nuevo usuario</h4>
+
+  <form method="POST">
+    <div class="mb-3">
+      <label for="nombre" class="form-label">Nombre completo</label>
+      <input type="text" name="nombre" class="form-control" required>
+    </div>
+
+    <div class="mb-3">
+      <label for="genero" class="form-label">Género</label>
+      <select name="genero" class="form-select" required>
+        <option value="">Seleccionar</option>
+        <option value="H">H</option>
+        <option value="M">M</option>
+      </select>
+    </div>
+
+    <div class="mb-3">
+      <label for="correo" class="form-label">Correo electrónico</label>
+      <input type="email" name="correo" class="form-control" required>
+    </div>
+
+    <!-- Opcional si quieres capturar delegación -->
+    <div class="mb-3">
+      <label for="delegacion_id" class="form-label">Delegación</label>
+      <select name="delegacion_id" id="delegacion_id" class="form-select" required>
+        <option value="">-- Selecciona --</option>
+        {% for d in delegaciones %}
+          <option value="{{ d.id }}">{{ d.nivel }} — {{ d.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+
+    <div class="mb-3">
+      <label for="contrasena" class="form-label">Contraseña</label>
+      <input type="password" name="contrasena" class="form-control" required>
+    </div>
+
+    <div class="mb-3">
+      <label for="rol" class="form-label">Rol</label>
+      <select name="rol" class="form-select" required>
+        <option value="admin">Administrador</option>
+        <option value="coordinador">Coordinador</option>
+        <option value="secretario">Secretario</option>
+        <option value="delegado">Delegado</option>
+      </select>
+    </div>
+
+    <button type="submit" class="btn btn-success">Crear usuario</button>
+    <a href="{{ url_for('usuarios_bp.listar_usuarios') }}" class="btn btn-secondary">Cancelar</a>
+  </form>
+</div>
+{% endblock %}
+```

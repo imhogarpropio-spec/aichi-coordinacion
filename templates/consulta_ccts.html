@@ -1,0 +1,181 @@
+{% extends 'base.html' %}
+{% block title %}CCTs por Delegación{% endblock %}
+
+{% block content %}
+<h4 class="mb-4">CCTs registrados en la delegación: <strong>{{ delegacion.nombre }}</strong></h4>
+
+<!-- ✅ Alerta de éxito única con autocierre -->
+{% with mensajes = get_flashed_messages(with_categories=true) %}
+  {% if mensajes %}
+    {% for categoria, mensaje in mensajes %}
+      <div class="alert alert-{{ categoria }} alert-dismissible fade show animate__animated animate__fadeIn" role="alert">
+        {{ mensaje }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<!-- Botones de Excel -->
+<div class="mb-4 d-flex flex-wrap gap-2">
+    <a href="{{ url_for('static', filename='plantillas/plantilla_ccts.xlsx') }}" class="btn btn-outline-primary">📥 Descargar plantilla Excel</a>
+    <form method="POST" action="{{ url_for('delegaciones_bp.subir_excel_ccts', delegacion_id=delegacion.id) }}" enctype="multipart/form-data" class="d-flex align-items-center gap-2">
+        <input type="file" name="archivo_excel" accept=".xlsx" required class="form-control">
+        <button type="submit" class="btn btn-success">📤 Subir Excel</button>
+    </form>
+</div>
+
+<!-- Botón para abrir modal de nuevo CCT -->
+<div class="mb-4">
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modal-nuevo-cct">
+    ➕ Agregar nuevo CCT
+  </button>
+</div>
+
+<!-- Modal para nuevo CCT -->
+<div class="modal fade" id="modal-nuevo-cct" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('delegaciones_bp.vista_ccts_por_delegacion', delegacion_id=delegacion.id) }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Agregar nuevo CCT</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-2">
+            <div class="col-md-3"><input type="text" name="nombre" class="form-control" placeholder="Nombre del plantel" required></div>
+            <div class="col-md-2"><input type="text" name="cct" class="form-control" placeholder="CCT" required></div>
+            <div class="col-md-2"><input type="text" name="turno" class="form-control" placeholder="Turno"></div>
+            <div class="col-md-2"><input type="text" name="nivel" class="form-control" placeholder="Nivel"></div>
+            <div class="col-md-3"><input type="text" name="modalidad" class="form-control" placeholder="Modalidad"></div>
+            <div class="col-md-2"><input type="text" name="zona_escolar" class="form-control" placeholder="Zona escolar"></div>
+            <div class="col-md-2"><input type="text" name="sector" class="form-control" placeholder="Sector"></div>
+            <div class="col-md-2"><input type="text" name="calle" class="form-control" placeholder="Calle"></div>
+            <div class="col-md-2"><input type="text" name="num_exterior" class="form-control" placeholder="No. Ext."></div>
+            <div class="col-md-2"><input type="text" name="num_interior" class="form-control" placeholder="No. Int."></div>
+            <div class="col-md-2"><input type="text" name="cruce_1" class="form-control" placeholder="Cruce 1"></div>
+            <div class="col-md-2"><input type="text" name="cruce_2" class="form-control" placeholder="Cruce 2"></div>
+            <div class="col-md-2"><input type="text" name="localidad" class="form-control" placeholder="Localidad"></div>
+            <div class="col-md-2"><input type="text" name="colonia" class="form-control" placeholder="Colonia"></div>
+            <div class="col-md-2"><input type="text" name="municipio" class="form-control" placeholder="Municipio"></div>
+            <div class="col-md-1"><input type="text" name="cp" class="form-control" placeholder="C.P."></div>
+            <div class="col-md-2"><input type="text" name="coordenadas_gps" class="form-control" placeholder="Coordenadas GPS"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">Guardar CCT</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Estilo tarjetas -->
+<style>
+.card-cct {
+    border: 1px solid #dee2e6;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    position: relative;
+    transition: box-shadow 0.3s;
+    width: 100%;
+}
+.card-cct:hover {
+    box-shadow: 0 0 0.5rem rgba(0, 0, 0, 0.15);
+}
+.card-actions {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+}
+.card-actions .btn-sm {
+    visibility: hidden;
+}
+.card-cct:hover .card-actions .btn-sm {
+    visibility: visible;
+}
+</style>
+
+<a href="{{ url_for('delegaciones_bp.vista_delegaciones') }}" class="btn btn-secondary mb-3">
+  ⬅️ Regresar a Delegaciones
+</a>
+
+
+<!-- Tarjetas de CCTs existentes -->
+<div class="row row-cols-1 row-cols-md-2 g-3">
+  {% for cct in ccts %}
+  <div class="col">
+    <div class="card-cct">
+      <div class="d-flex justify-content-between align-items-center">
+        <a href="{{ url_for('personal_bp.vista_personal', delegacion=delegacion.nombre, cct=cct.cct) }}"
+          class="fw-bold text-decoration-none"
+          style="color: #f37021 !important;">
+          {{ cct.nombre }} ({{ cct.cct }})
+        </a>
+
+        <div class="card-actions">
+          <button class="btn btn-outline-success btn-sm me-1" data-bs-toggle="modal" data-bs-target="#modal-{{ cct.id }}" title="Editar">✏️</button>
+          <a href="{{ url_for('delegaciones_bp.eliminar_cct', id=cct.id) }}" class="btn btn-outline-danger btn-sm" onclick="return confirm('¿Eliminar este CCT?')">🗑️</a>
+        </div>
+      </div>
+      <small class="text-muted">{{ cct.nivel }} | {{ cct.turno }} | {{ cct.modalidad }}</small>
+      <div><small class="text-muted">Zona: {{ cct.zona_escolar }} | Sector: {{ cct.sector }}</small></div>
+    </div>
+  </div>
+
+  <!-- Modal de edición -->
+  <div class="modal fade" id="modal-{{ cct.id }}" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <form method="POST" action="{{ url_for('delegaciones_bp.editar_cct', id=cct.id) }}">
+          <div class="modal-header">
+            <h5 class="modal-title">Editar CCT</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-2">
+              <div class="col-md-6"><input type="text" name="nuevo_nombre" value="{{ cct.nombre }}" class="form-control" required></div>
+              <div class="col-md-6"><input type="text" name="nuevo_cct" value="{{ cct.cct }}" class="form-control" required></div>
+              <div class="col-md-4"><input type="text" name="nuevo_turno" value="{{ cct.turno }}" class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_nivel" value="{{ cct.nivel }}" class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_modalidad" value="{{ cct.modalidad }}" class="form-control"></div>
+              <div class="col-md-6"><input type="text" name="nuevo_zona_escolar" value="{{ cct.zona_escolar }}" class="form-control"></div>
+              <div class="col-md-6"><input type="text" name="nuevo_sector" value="{{ cct.sector }}" class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_calle" value="{{ cct.calle }}" class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_num_exterior" value="{{ cct.num_exterior }}" class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_num_interior" value="{{ cct.num_interior }}" class="form-control"></div>
+              <div class="col-md-6"><input type="text" name="nuevo_cruce_1" value="{{ cct.cruce_1 }}" class="form-control"></div>
+              <div class="col-md-6"><input type="text" name="nuevo_cruce_2" value="{{ cct.cruce_2 }}" class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_localidad" value="{{ cct.localidad }}" class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_colonia" value="{{ cct.colonia }}" class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_municipio" value="{{ cct.municipio }}" class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_cp" value="{{ cct.cp }}" class="form-control"></div>
+              <div class="col-md-8"><input type="text" name="nuevo_coordenadas_gps" value="{{ cct.coordenadas_gps }}" class="form-control"></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">Guardar cambios</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Script para cerrar alertas -->
+<script>
+  setTimeout(() => {
+    const alerta = document.querySelector('.alert');
+    if (alerta) {
+      alerta.classList.remove('show');
+      alerta.classList.add('fade');
+      setTimeout(() => alerta.remove(), 500);
+    }
+  }, 1500);
+</script>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
+{% endblock %}

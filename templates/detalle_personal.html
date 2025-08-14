@@ -1,0 +1,270 @@
+{% extends 'base.html' %}
+{% block title %}Detalle del Personal{% endblock %}
+
+{% block content %}
+
+<a href="{{ url_for('personal_bp.ver_historial', entidad='personal', id=persona.id) }}" class="btn btn-outline-secondary">
+  📜 Ver historial de cambios
+</a>
+
+
+<a href="{{ url_for('personal_bp.vista_personal', delegacion=persona.plantel.delegacion.nombre, cct=persona.cct) }}" class="btn btn-secondary">
+  ⬅️ Regresar a Personal
+</a>
+
+
+<a href="{{ url_for('dashboard_bp.dashboard') }}" class="btn btn-secondary">
+  ⬅️ Regresar al Menú principal
+</a>
+
+<div class="container mt-4">
+
+  <h4 class="mb-3">Detalle del personal: <strong>{{ persona.apellido_paterno }} {{ persona.apellido_materno }} {{ persona.nombre }}</strong></h4>
+
+  <li class="list-group-item"><p><strong>CCT de adscripción:</strong> {{ persona.cct }} – {{ persona.plantel.nombre }}</p>
+
+  </div>
+
+  <div class="d-flex gap-2 mt-2">
+  <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-editar-personal">
+    ✏️ Editar
+  </button>
+  <button class="btn btn-outline-warning btn-sm" data-bs-toggle="modal" data-bs-target="#modal-cambio-adscripcion">
+    🔄 Cambio de adscripción
+  </button>
+  
+</div>
+
+  <!-- Lista de datos -->
+  <ul class="list-group mb-4">
+    <li class="list-group-item"><strong>Apellido paterno:</strong> {{ persona.apellido_paterno }}</li>
+    <li class="list-group-item"><strong>Apellido materno:</strong> {{ persona.apellido_materno }}</li>
+    <li class="list-group-item"><strong>Nombre(s):</strong> {{ persona.nombre }}</li>
+    <li class="list-group-item"><strong>Género:</strong> {{ persona.genero }}</li>
+    <li class="list-group-item"><strong>RFC:</strong> {{ persona.rfc }}</li>
+    <li class="list-group-item"><strong>CURP:</strong> {{ persona.curp }}</li>
+    <li class="list-group-item"><strong>Clave presupuestal:</strong> {{ persona.clave_presupuestal }}</li>
+    <li class="list-group-item"><strong>Función:</strong> {{ persona.funcion }}</li>
+    <li class="list-group-item"><strong>Grado máximo de estudios:</strong> {{ persona.grado_estudios }}</li>
+    <li class="list-group-item"><strong>Titulado:</strong> {{ persona.titulado }}</li>
+    <li class="list-group-item"><strong>Fecha de ingreso:</strong> {{ persona.fecha_ingreso }}</li>
+    <li class="list-group-item"><strong>Fecha baja por jubilación:</strong> {{ persona.fecha_baja_jubilacion }}</li>
+    <li class="list-group-item"><strong>Estatus de membresía:</strong> {{ persona.estatus_membresia }}</li>
+    <li class="list-group-item"><strong>Nombramiento:</strong> {{ persona.nombramiento }}</li>
+    <li class="list-group-item"><strong>Domicilio:</strong> {{ persona.domicilio }}</li>
+    <li class="list-group-item"><strong>Número:</strong> {{ persona.numero }}</li>
+    <li class="list-group-item"><strong>Localidad:</strong> {{ persona.localidad }}</li>
+    <li class="list-group-item"><strong>Colonia:</strong> {{ persona.colonia }}</li>
+    <li class="list-group-item"><strong>Municipio:</strong> {{ persona.municipio }}</li>
+    <li class="list-group-item"><strong>C.P.:</strong> {{ persona.cp }}</li>
+    <li class="list-group-item"><strong>Teléfono 1:</strong> {{ persona.tel1 }}</li>
+    <li class="list-group-item"><strong>Teléfono 2:</strong> {{ persona.tel2 }}</li>
+    <li class="list-group-item"><strong>Correo electrónico:</strong> {{ persona.correo_electronico }}</li>
+    </ul>
+
+
+</div>
+
+<hr>
+<h5>Observaciones registradas</h5>
+
+<!-- Formulario para agregar nueva -->
+<form method="POST" action="{{ url_for('personal_bp.agregar_observacion', personal_id=persona.id) }}" class="mb-3">
+  <div class="input-group">
+    <textarea name="texto" class="form-control" placeholder="Escribe una observación..." required></textarea>
+    <button class="btn btn-outline-primary" type="submit">➕ Agregar</button>
+  </div>
+</form>
+
+<!-- Lista de observaciones -->
+<div style="max-height: 300px; overflow-y: auto;">
+  {% for obs in persona.observaciones %}
+    <div class="border rounded p-2 mb-2 small position-relative"style="{% if 'Motivo de cambio de adscripción:' in obs.texto %}background-color: #ff6a00; color: white;{% else %}background-color: #f8f9fa;{% endif %}">
+
+      <strong>{{ usuarios_por_id[obs.usuario_id].nombre if obs.usuario_id in usuarios_por_id else 'Usuario' }}</strong>
+      <em class="text-muted">({{ obs.fecha.strftime('%d/%m/%Y %H:%M') }})</em><br>
+
+      {% if current_user.rol == 'admin' %}
+  <div class="d-flex align-items-start gap-2">
+    
+    <!-- Formulario para editar -->
+    <form method="POST" action="{{ url_for('personal_bp.editar_observacion', obs_id=obs.id) }}">
+      <div class="d-flex align-items-start gap-2">
+        <textarea name="nuevo_texto" class="form-control form-control-sm" rows="2" style="width: 1100px;">{{ obs.texto }}</textarea>
+        <button class="btn btn-sm btn-success mt-1" type="submit" title="Guardar">💾</button>
+      </div>
+    </form>
+
+    <!-- Formulario para eliminar -->
+    <form method="POST" action="{{ url_for('personal_bp.eliminar_observacion', obs_id=obs.id) }}" onsubmit="return confirm('¿Eliminar esta observación?')">
+      <button class="btn btn-sm btn-danger mt-1" type="submit" title="Eliminar">🗑️</button>
+    </form>
+
+  </div>
+{% else %}
+  {{ obs.texto }}
+{% endif %}
+
+    </div>
+
+  {% else %}
+    <p class="text-muted">Sin observaciones registradas.</p>
+  {% endfor %}
+</div>
+
+
+<!-- Modal de edición -->
+<div class="modal fade" id="modal-editar-personal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('personal_bp.editar_personal', id=persona.id) }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Editar datos del personal</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-2">
+            {% for label, name, type, value, options in [
+              ('Apellido paterno', 'apellido_paterno', 'text', persona.apellido_paterno, None),
+              ('Apellido materno', 'apellido_materno', 'text', persona.apellido_materno, None),
+              ('Nombre(s)', 'nombre', 'text', persona.nombre, None),
+              ('Género', 'genero', 'select', persona.genero, [('H', 'H'), ('M', 'M')]),
+              ('RFC', 'rfc', 'text', persona.rfc, None),
+              ('CURP', 'curp', 'text', persona.curp, None),
+              ('Clave presupuestal', 'clave_presupuestal', 'text', persona.clave_presupuestal, None),
+              ('Función', 'funcion', 'text', persona.funcion, None),
+              ('Grado máximo de estudios', 'grado_estudios', 'text', persona.grado_estudios, None),
+              ('Titulado', 'titulado', 'select', persona.titulado, [('TÍTULO', 'TÍTULO'), ('No Titulado', 'No Titulado'), ('N/A', 'N/A')]),
+              ('Fecha de ingreso', 'fecha_ingreso', 'date', persona.fecha_ingreso, None),
+              ('Fecha baja por jubilación', 'fecha_baja_jubilacion', 'date', persona.fecha_baja_jubilacion, None),
+              ('Estatus de membresía', 'estatus_membresia', 'select', persona.estatus_membresia, [('ACTIVO', 'ACTIVO'), ('INACTIVO', 'INACTIVO')]),
+              ('Nombramiento', 'nombramiento', 'text', persona.nombramiento, None),
+              ('Domicilio', 'domicilio', 'text', persona.domicilio, None),
+              ('Número', 'numero', 'text', persona.numero, None),
+              ('Localidad', 'localidad', 'text', persona.localidad, None),
+              ('Colonia', 'colonia', 'text', persona.colonia, None),
+              ('Municipio', 'municipio', 'text', persona.municipio, None),
+              ('C.P.', 'cp', 'text', persona.cp, None),
+              ('Teléfono 1', 'tel1', 'text', persona.tel1, None),
+              ('Teléfono 2', 'tel2', 'text', persona.tel2, None),
+              ('Correo electrónico', 'correo_electronico', 'email', persona.correo_electronico, None)
+            ] %}
+              <div class="col-md-4">
+                <label class="form-label">{{ label }}</label>
+                {% if type == 'select' %}
+                  <select class="form-select" name="{{ name }}">
+                    {% if not value %}
+                      <option value="">Seleccionar</option>
+                    {% endif %}
+                    {% for val, text in options %}
+                      <option value="{{ val }}" {% if value == val %}selected{% endif %}>{{ text }}</option>
+                    {% endfor %}
+                  </select>
+                {% elif name == 'curp' %}
+                  <input type="text" name="curp" value="{{ value }}" class="form-control text-uppercase"
+                        pattern="^[A-Z]{4}\d{6}[HM][A-Z]{2}[A-Z]{3}[A-Z0-9]\d$"
+                        title="CURP inválido. Debe tener 18 caracteres, en mayúsculas."
+                        required>
+
+                {% elif name == 'rfc' %}
+                  <input type="text" name="rfc" value="{{ value }}" class="form-control text-uppercase"
+                        pattern="^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$"
+                        title="RFC inválido. Debe tener 13 caracteres, en mayúsculas."
+                        required>
+
+{% else %}
+  <input type="{{ type }}" name="{{ name }}" value="{{ value }}" class="form-control">
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-success">💾 Guardar cambios</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="modal-cambio-adscripcion" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('personal_bp.cambiar_adscripcion', id=persona.id) }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Cambio de adscripción</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="nivel" class="form-label">Selecciona nivel educativo:</label>
+            <select id="nivel" name="nivel" class="form-select" required>
+              <option value="">Seleccionar</option>
+              {% for nivel in niveles_disponibles %}
+                <option value="{{ nivel }}">{{ nivel }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label for="nuevo_cct" class="form-label">Selecciona nuevo CCT:</label>
+            <select id="nuevo_cct" name="nuevo_cct" class="form-select" required>
+              <option value="">Selecciona primero un nivel</option>
+            </select>
+            <div class="mb-3">
+              <label for="motivo" class="form-label">Motivo del cambio:</label>
+              <textarea id="motivo" name="motivo" class="form-control" rows="3" required placeholder="Ejemplo: Reasignación por necesidades del servicio."></textarea>
+            </div>
+          </div>
+          
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-success" type="submit">💾 Confirmar cambio</button>
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+
+<script>
+  const endpoint = "{{ url_for('personal_bp.obtener_ccts_por_nivel') }}";
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const nivelSelect = document.getElementById("nivel");
+    const cctSelect = document.getElementById("nuevo_cct");
+
+    nivelSelect.addEventListener("change", async () => {
+      const nivel = nivelSelect.value;
+      cctSelect.innerHTML = '<option value="">Cargando CCTs...</option>';
+
+      if (!nivel) {
+        cctSelect.innerHTML = '<option value="">Selecciona primero un nivel</option>';
+        return;
+      }
+
+      try {
+        const response = await fetch(`${endpoint}?nivel=${encodeURIComponent(nivel)}`);
+        const data = await response.json();
+
+        if (data.length === 0) {
+          cctSelect.innerHTML = '<option value="">No se encontraron CCTs</option>';
+        } else {
+          cctSelect.innerHTML = '<option value="">Selecciona un CCT</option>';
+          data.forEach(item => {
+            const option = document.createElement("option");
+            option.value = item.cct;
+            option.textContent = `${item.cct} – ${item.nombre}`;
+            cctSelect.appendChild(option);
+          });
+        }
+      } catch (error) {
+        cctSelect.innerHTML = '<option value="">Error al cargar CCTs</option>';
+      }
+    });
+  });
+</script>
+
+
+{% endblock %}

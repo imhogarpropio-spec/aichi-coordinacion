@@ -1,0 +1,182 @@
+{% extends 'base.html' %}
+
+{% block title %}Personal registrado{% endblock %}
+
+{% block content %}
+
+<a href="{{ url_for('delegaciones_bp.vista_ccts_por_delegacion', delegacion_id=delegacion.id) }}" class="btn btn-secondary mb-3">
+  ⬅️ Regresar a CCTs
+</a>
+
+
+<h4 class="mb-2">
+  Personal en el plantel <strong>{{ plantel.nombre }}</strong> ({{ plantel.cct }})
+</h4>
+
+<p class="mb-1">
+  <strong>Dirección:</strong>
+  {{ plantel.calle or '' }} {{ plantel.num_exterior or '' }}{{ ' Int. ' + plantel.num_interior if plantel.num_interior else '' }},
+  {{ plantel.colonia or '' }}, {{ plantel.municipio or '' }}, C.P. {{ plantel.cp or '' }}
+</p>
+
+{% if plantel.coordenadas_gps %}
+<p>
+  <a href="https://www.google.com/maps/search/?api=1&query={{ plantel.coordenadas_gps }}" target="_blank" class="btn btn-sm btn-outline-success">
+    📍 Ver en Google Maps
+  </a>
+</p>
+{% endif %}
+
+
+{% with mensajes = get_flashed_messages(with_categories=true) %}
+  {% if mensajes %}
+    {% for categoria, mensaje in mensajes %}
+      <div class="alert alert-{{ categoria }} alert-dismissible fade show animate__animated animate__fadeIn" role="alert">
+        {{ mensaje }}
+        <button class="btn-close" data-bs-dismiss="alert" type="button"></button>
+</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<div class="mb-4 d-flex flex-wrap gap-2">
+<a class="btn btn-outline-primary" href="{{ url_for('static', filename='plantillas/plantilla_personal.xlsx') }}">📥 Descargar plantilla Excel</a>
+<form action="{{ url_for('personal_bp.subir_excel_personal', cct=plantel.cct) }}" class="d-flex align-items-center gap-2" enctype="multipart/form-data" method="POST">
+<input accept=".xlsx" class="form-control" name="archivo_excel" required="" type="file"/>
+<button class="btn btn-success" type="submit">📤 Subir Excel</button>
+</form>
+</div>
+<div class="mb-4">
+<button class="btn btn-primary" data-bs-target="#modal-nuevo-personal" data-bs-toggle="modal">
+    ➕ Agregar personal
+  </button>
+</div>
+<div aria-hidden="true" class="modal fade" id="modal-nuevo-personal" tabindex="-1">
+<div class="modal-dialog modal-xl modal-dialog-centered">
+<div class="modal-content">
+<form action="{{ url_for('personal_bp.agregar_personal_manual', cct=plantel.cct) }}" method="POST">
+<div class="modal-header">
+<h5 class="modal-title">Agregar personal</h5>
+<button class="btn-close" data-bs-dismiss="modal" type="button"></button>
+</div>
+<div class="modal-body">
+<div class="row g-2">
+            {% for label, name, type, required in [
+              ('Apellido paterno', 'apellido_paterno', 'text', true),
+              ('Apellido materno', 'apellido_materno', 'text', true),
+              ('Nombre(s)', 'nombre', 'text', true),
+              ('Género', 'genero', 'select', true),
+              ('RFC', 'rfc', 'text', true),
+              ('CURP', 'curp', 'text', true),
+              ('Clave presupuestal', 'clave_presupuestal', 'text', false),
+              ('Función', 'funcion', 'text', true),
+              ('Grado máximo de estudios', 'grado_estudios', 'text', false),
+              ('Titulado', 'titulado', 'selectTit', false),
+              ('Fecha de ingreso', 'fecha_ingreso', 'date', false),
+              ('Fecha baja por jubilación', 'fecha_baja_jubilacion', 'date', false),
+              ('Estatus de membresía', 'estatus_membresia', 'selectEst', false),
+              ('Nombramiento', 'nombramiento', 'text', false),
+              ('Domicilio', 'domicilio', 'text', false),
+              ('Número', 'numero', 'text', false),
+              ('Localidad', 'localidad', 'text', false),
+              ('Colonia', 'colonia', 'text', false),
+              ('Municipio', 'municipio', 'text', false),
+              ('C.P.', 'cp', 'text', false),
+              ('Teléfono 1', 'tel1', 'text', false),
+              ('Teléfono 2', 'tel2', 'text', false),
+              ('Correo electrónico', 'correo_electronico', 'email', false)
+            ] %}
+              <div class="col-md-4">
+<label class="form-label">{{ label }}</label>
+                {% if type == 'select' %}
+                  <select class="form-select" name="{{ name }}" required="">
+<option value="">Seleccionar</option>
+<option value="H">H</option>
+<option value="M">M</option>
+</select>
+                {% elif type == 'selectTit' %}
+                  <select class="form-select" name="{{ name }}">
+<option value="">Seleccionar</option>
+<option value="TÍTULO">TÍTULO</option>
+<option value="NO TITUTLADO">NO TITULADO</option>
+<option value="N/A">N/A</option>
+</select>
+                {% elif type == 'selectEst' %}
+                  <select class="form-select" name="{{ name }}">
+<option value="">Seleccionar</option>
+<option value="ACTIVO">ACTIVO</option>
+<option value="INACTIVO">INACTIVO</option>
+</select>
+                {% else %}
+                  <input type="{{ type }}" name="{{ name }}" class="form-control" {% if required %}required{% endif %}>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+</div>
+<div class="modal-footer">
+<button class="btn btn-success" type="submit">Guardar</button>
+<button class="btn btn-secondary" data-bs-dismiss="modal" type="button">Cancelar</button>
+</div>
+</form>
+</div>
+</div>
+</div>
+<style>
+.card-personal {
+  border: 1px solid #dee2e6;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  position: relative;
+  transition: box-shadow 0.3s;
+  width: 100%;
+}
+.card-personal:hover {
+  box-shadow: 0 0 0.5rem rgba(0, 0, 0, 0.15);
+}
+.card-actions {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+}
+.card-actions .btn-sm {
+  visibility: hidden;
+}
+.card-personal:hover .card-actions .btn-sm {
+  visibility: visible;
+}
+</style>
+<div class="row row-cols-1 row-cols-md-2 g-3">
+  {% for persona in personal %}
+  <div class="col">
+<div class="card-personal">
+<div class="d-flex justify-content-between align-items-center">
+<a class="fw-bold text-decoration-none" href="{{ url_for('personal_bp.vista_detalle_personal', id=persona.id) }}" style="color: #f37021 !important;">
+          {{ persona.apellido_paterno }} {{ persona.apellido_materno }} {{ persona.nombre }}
+        </a>
+<div class="card-actions">
+  <form action="{{ url_for('personal_bp.eliminar_personal', id=persona.id) }}"
+        method="post" style="display:inline"
+        onsubmit="return confirm('¿Eliminar este registro?');">
+    {# Si luego configuras Flask-WTF, aquí pones: {{ csrf_token() }} #}
+    <button type="submit" class="btn btn-outline-danger btn-sm">🗑️</button>
+  </form>
+</div>
+</div>
+<small class="text-muted">{{ persona.funcion }}</small>
+</div>
+</div>
+  {% endfor %}
+</div>
+<script>
+  setTimeout(() => {
+    const alerta = document.querySelector('.alert');
+    if (alerta) {
+      alerta.classList.remove('show');
+      alerta.classList.add('fade');
+      setTimeout(() => alerta.remove(), 2000);
+    }
+  }, 1500);
+</script>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet"/>
+{% endblock %}

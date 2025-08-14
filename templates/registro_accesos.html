@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}Registro de Accesos{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h3 class="text-center mb-4">Historial de Accesos</h3>
+
+    <div class="table-responsive">
+        <table class="table table-bordered table-hover table-striped">
+            <thead class="table-dark text-center">
+                <tr>
+                    <th>Nombre</th>
+                    <th>Correo</th>
+                    <th>Rol</th>
+                    <th>Fecha de entrada</th>
+                    <th>Fecha de salida</th>
+                    <th>Duración</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for acceso in accesos %}
+                <tr class="text-center">
+                    <td>{{ acceso.nombre }}</td>
+                    <td>{{ acceso.correo }}</td>
+                    <td>{{ acceso.rol }}</td>
+                    <td>{{ acceso.fecha_entrada.strftime('%d/%m/%Y %H:%M:%S') }}</td>
+                    <td>
+                        {% if acceso.fecha_salida %}
+                            {{ acceso.fecha_salida.strftime('%d/%m/%Y %H:%M:%S') }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if acceso.fecha_salida %}
+                            {% set dur = acceso.fecha_salida - acceso.fecha_entrada %}
+                            {{ dur }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="text-center mt-3">
+        <a href="{{ url_for('dashboard_bp.dashboard') }}" class="btn btn-secondary">Regresar al panel</a>
+    </div>
+</div>
+{% endblock %}

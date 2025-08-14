@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block title %}Búsqueda de Personal{% endblock %}
+
+{% block content %}
+
+<a href="{{ url_for('dashboard_bp.dashboard') }}" class="btn btn-secondary mb-3">
+  ⬅️ Regresar al Menú principal
+</a>
+
+<div class="container mt-4">
+  <h4 class="mb-4">🔍 Buscar personal</h4>
+
+  <form method="POST" class="row g-2 mb-4">
+    <div class="col-md-3">
+      <input type="text" name="apellido_paterno" class="form-control" placeholder="Apellido paterno">
+    </div>
+    <div class="col-md-3">
+      <input type="text" name="apellido_materno" class="form-control" placeholder="Apellido materno">
+    </div>
+    <div class="col-md-3">
+      <input type="text" name="nombre" class="form-control" placeholder="Nombre(s)">
+    </div>
+    <div class="col-md-3">
+      <input type="text" name="curp" class="form-control" placeholder="CURP">
+    </div>
+    <div class="col-md-3">
+      <input type="text" name="rfc" class="form-control" placeholder="RFC">
+    </div>
+    <div class="col-md-3">
+      <button type="submit" class="btn btn-primary w-100">🔍 Buscar</button>
+    </div>
+  </form>
+
+  {% if resultados %}
+  <div class="table-responsive">
+    <table class="table table-bordered table-hover align-middle">
+      <thead class="table-dark">
+        <tr>
+          <th>Nombre completo</th>
+          <th>CURP</th>
+          <th>RFC</th>
+          <th>CCT</th>
+          <th>Delegación</th>
+          <th>Ficha</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for persona in resultados %}
+        <tr>
+          <td>{{ persona.apellido_paterno }} {{ persona.apellido_materno }} {{ persona.nombre }}</td>
+          <td>{{ persona.curp }}</td>
+          <td>{{ persona.rfc }}</td>
+          <td>{{ persona.cct }}</td>
+          <td>{{ persona.plantel.delegacion.nombre }}</td>
+          <td>
+            <a href="{{ url_for('personal_bp.vista_detalle_personal', id=persona.id) }}" class="btn btn-outline-secondary btn-sm">📄 Ver ficha</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% elif request.method == 'POST' %}
+    <div class="alert alert-warning">No se encontraron coincidencias.</div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,101 @@
+{% extends 'layout_app.html' %}
+
+{% block title %}Panel Principal{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card shadow">
+            <div class="card-body">
+
+                <!-- Encabezado personalizado -->
+                <div class="text-center">
+                    <h4 class="card-title mb-1">
+                        {% if current_user.genero == 'M' %}
+                            Bienvenida,
+                        {% else %}
+                            Bienvenido,
+                        {% endif %}
+                        {{ current_user.nombre }}
+                    </h4>
+
+                    {% if current_user.rol == 'admin' %}
+                        <p class="text-muted mb-1" style="font-weight: 500;">Administrador del sistema</p>
+                    {% elif current_user.rol == 'coordinador' %}
+                        <p class="text-muted mb-1" style="font-weight: 500;">Coordinación Regional</p>
+                    {% elif current_user.rol == 'supervisor' %}
+                        <p class="text-muted mb-1" style="font-weight: 500;">Supervisión {{ current_user.zona }}</p>
+                    {% elif current_user.rol == 'delegado' %}
+                        <p class="text-muted mb-1" style="font-weight: 500;">Delegación {{ current_user.delegacion }}</p>
+                    {% else %}
+                        <p class="text-muted mb-1" style="font-weight: 500;">Usuario sin rol definido</p>
+                    {% endif %}
+
+                    {% if current_user.rol != 'delegado' %}
+                        <p class="text-muted mb-1">Delegación: {{ current_user.delegacion }}</p>
+                    {% endif %}
+                </div>
+
+                <hr>
+
+                <!-- Cuerpo del panel -->
+                <div class="text-center">
+                    <p>Este es tu panel principal. Desde aquí podrás acceder a los módulos disponibles según tu rol.</p>
+                </div>
+
+                <!-- Botones de acción -->
+                <div class="d-flex flex-wrap justify-content-center mt-4 gap-2">
+
+                    {% if current_user.rol in ['admin', 'coordinador', 'supervisor', 'delegado'] %}
+                    <a href="{{ url_for('personal_bp.busqueda_personal') }}" class="btn btn-outline-dark">🔍 Buscar Personal</a>
+                    </a>
+                    {% endif %}
+
+                    {% if current_user.rol in ['admin', 'coordinador', 'supervisor', 'delegado'] %}
+                    <a href="{{ url_for('delegaciones_bp.vista_delegaciones') }}" class="btn btn-outline-primary">
+                        Consulta de Personal
+                    </a>
+                    {% endif %}
+
+                    {% if current_user.rol == 'admin' %}
+                    <a href="{{ url_for('accesos_bp.registro_accesos') }}" class="btn btn-outline-dark position-relative">
+                        🕓 Ver registros de acceso
+
+                        {% if activos and activos > 0 %}
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                            {{ activos }}
+                            <span class="visually-hidden">Sesiones activas</span>
+                        </span>
+                        {% endif %}
+                    </a>
+
+                    <a href="{{ url_for('notificacion_bp.ver_notificaciones') }}" class="btn btn-outline-warning position-relative">
+                        🔔 Notificaciones del sistema
+
+                        {% if total_notificaciones and total_notificaciones > 0 %}
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                            {{ total_notificaciones }}
+                            <span class="visually-hidden">Notificaciones</span>
+                        </span>
+                        {% endif %}
+                    </a>
+
+                    <a href="{{ url_for('usuarios_bp.listar_usuarios') }}" class="btn btn-outline-secondary">
+                        👥 Gestión de usuarios
+                    </a>
+
+                    {% endif %}
+
+                    <a href="{{ url_for('auth_bp.logout') }}" class="btn btn-outline-danger">
+                        Cerrar sesión
+                    </a>
+
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+

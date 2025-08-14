@@ -1,0 +1,184 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Sistema Delegacional{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+    .logo-snte,
+    .logo-hgo {
+        height: 110px;
+        object-fit: contain;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+        border-radius: 5px;
+    }
+
+    footer {
+        font-size: 0.85rem;
+        color: #6c757d;
+        background-color: #f9f9f9;
+        padding: 15px 0;
+    }
+
+    .sidebar {
+        background-color: #e9ecef;
+        min-height: 100vh;
+        background-color: #e9ecef;
+        border-right: 1px solid #dee2e6;
+        padding-top: 1rem;
+    }
+
+    .sidebar .nav-link {
+        color: #333;
+    }
+
+    .sidebar .nav-link:hover {
+        background-color: #e9ecef;
+    }
+
+    @media (max-width: 768px) {
+        .sidebar {
+        background-color: #e9ecef;
+            position: fixed;
+            z-index: 1040;
+            width: 220px;
+            left: -220px;
+            transition: left 0.3s;
+        }
+
+        .sidebar.show {
+            left: 0;
+        }
+
+        #main {
+            padding-left: 0 !important;
+        }
+    }
+
+    @media (min-width: 769px) { #main { padding-left: 0; }
+    }
+
+    .header-flex {
+        flex-wrap: wrap;
+    }
+
+    .menu-toggle {
+        display: inline-block !important;
+    }
+
+    @media (max-width: 768px) {
+        .menu-toggle {
+            display: inline-block;
+        }
+    }
+    
+@media (min-width: 769px) {
+    .sidebar {
+        transition: margin-left 0.3s;
+        margin-left: 0;
+    }
+    .sidebar:not(.show) {
+        margin-left: -220px;
+    }
+    #main {
+    transition: margin-left 0.3s;
+}
+}
+
+
+@media (min-width: 769px) {
+    .sidebar {
+        transition: margin-left 0.3s;
+        margin-left: 0;
+        background-color: #e9ecef !important;
+    }
+
+    .sidebar:not(.show) {
+        margin-left: -220px;
+    }
+
+    #main {
+    transition: margin-left 0.3s;
+}
+}
+
+@media (max-width: 768px) {
+    .sidebar {
+        position: fixed;
+        z-index: 1040;
+        width: 220px;
+        left: -220px;
+        transition: left 0.3s;
+        background-color: #e9ecef !important;
+    }
+
+    .sidebar.show {
+        left: 0;
+    }
+
+    #main {
+        padding-left: 0 !important;
+    }
+
+    .menu-toggle {
+        display: inline-block !important;
+    }
+}
+
+</style>
+</head>
+<body class="bg-light">
+
+<!-- CONTENIDO PRINCIPAL -->
+<div id="main">
+    <div class="container-fluid py-3 px-4">
+        
+<div class="d-flex flex-grow-1 justify-content-between align-items-center">
+    <img src="{{ url_for('static', filename='img/logo_snte.png') }}" alt="SNTE" class="logo-snte d-none d-md-block">
+    <h2 class="text-center flex-grow-1 m-0 px-2 header-title">
+        Sistema de gestión de personal - Coordinación Regional X
+    </h2>
+    <img src="{{ url_for('static', filename='img/logo_magisterio.png') }}" alt="Hidalgo" class="logo-hgo d-none d-md-block">
+</div>
+
+    </div>
+
+    <div class="container pb-5">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- PIE DE PÁGINA -->
+    <footer class="mt-5 border-top pt-3 bg-white text-center text-muted small">
+        <p class="mb-1">Coordinación Regional X SNTE Sección XV – Hidalgo</p>
+        <p class="mb-1">Calle Dr. Torres Cravioto #202, Col. Real de Minas, C.P. 42090, Pachuca de Soto, Hgo.</p>
+        <p class="mb-2">Coordinador Regional: Prof. Erik Zamorano Mendoza</p>
+        <body class="bg-light" style="margin-bottom: 120px;">
+    </footer>
+
+    <!-- FIRMA TÉCNICA -->
+    <div class="text-muted small firma-tecnica text-center mt-3 mb-2" style="opacity: 0.6;">
+        AICHI SYSTEM<br>
+        Soporte técnico<br> 
+        dar clic o tocar aqui: 
+        <a href="https://wa.me/527713720679" class="text-decoration-none text-muted" target="_blank">
+            <img src="{{ url_for('static', filename='img/whatsapp_icon.png') }}" alt="WhatsApp" width="16" height="16" style="margin-bottom: 2px;">
+            771 372 0679
+        </a>
+    </div>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,71 @@
+Listado de rutas de carpetas para el volumen Descargas
+El número de serie del volumen es 9451-7382
+CD:.
+¦   aichi.env
+¦   app.py
+¦   auth_routes.py
+¦   config.py
+¦   cou.py
+¦   crear_tablas.py
+¦   crear_tablas_user.py
+¦   cu.py
+¦   estructura.txt
+¦   extensiones.py
+¦   limpia.py
+¦   migrate.py
+¦   models.py
+¦   rc.py
+¦   utils.py
+¦   
++---instance
++---routes
+¦   ¦   accesos_routes.py
+¦   ¦   auth_routes.py
+¦   ¦   dashboard_routes.py
+¦   ¦   delegaciones_routes.py
+¦   ¦   personal_routes.py
+¦   ¦   __init__.py
+¦   ¦   
+¦   +---__pycache__
+¦           accesos_routes.cpython-310.pyc
+¦           auth_routes.cpython-310.pyc
+¦           dashboard_routes.cpython-310.pyc
+¦           delegaciones_routes.cpython-310.pyc
+¦           personal_routes.cpython-310.pyc
+¦           __init__.cpython-310.pyc
+¦           
++---static
+¦   +---img
+¦   ¦       logo_hidalgo.png
+¦   ¦       logo_magisterio.png
+¦   ¦       logo_snte.png
+¦   ¦       whatsapp_icon.png
+¦   ¦       
+¦   +---plantillas
+¦           plantilla_ccts.xlsx
+¦           plantilla_delegaciones.xlsx
+¦           plantilla_personal.xlsx
+¦           
++---templates
+¦       base.html
+¦       busqueda_personal.html
+¦       consulta_ccts.html
+¦       consulta_delegaciones.html
+¦       consulta_personal.html
+¦       dashboard.html
+¦       detalle_personal.html
+¦       inactividad.html
+¦       layout_app.html
+¦       login.html
+¦       registro_accesos.html
+¦       ver_historial.html
+¦       
++---__pycache__
+        app.cpython-310.pyc
+        config.cpython-310.pyc
+        extensiones.cpython-310.pyc
+        migrate.cpython-310.pyc
+        models.cpython-310.pyc
+        routes.cpython-310.pyc
+        utils.cpython-310.pyc
+        

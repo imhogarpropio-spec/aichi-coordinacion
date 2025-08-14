@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<!-- SIDEBAR SEGURO PARA USO INTERNO -->
+<div id="sidebar" class="sidebar position-fixed top-0 bottom-0 start-0 px-3 bg-light border-end" style="width: 220px;">
+    <h5 class="text-center mt-3">📂 Menú</h5>
+    <ul class="nav flex-column mt-4">
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard_bp.dashboard') }}">🏠 Dashboard</a></li>
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('delegaciones_bp.vista_delegaciones') }}">📋 Delegaciones</a></li>
+        <li class="nav-item"><a class="nav-link" href="{{ url_for('delegaciones_bp.vista_delegaciones') }}">🕓 Accesos</a></li>
+        <li class="nav-item"><a class="nav-link text-danger" href="{{ url_for('logout') }}">⛔ Cerrar sesión</a></li>
+    </ul>
+</div>
+
+<!-- CONTENIDO AJUSTADO -->
+<div id="main" style="margin-left: 220px;">
+    <div class="container-fluid py-3 px-4">
+        <div class="d-flex justify-content-between align-items-center mb-4 header-flex">
+            <button class="btn btn-outline-secondary d-md-none" onclick="toggleSidebar()">☰</button>
+            <h2 class="text-center flex-grow-1 m-0 px-2 header-title">
+                Sistema de gestión de personal - Coordinación Regional X
+            </h2>
+        </div>
+    </div>
+
+    <div class="container pb-5">
+        {% block internal_content %}{% endblock %}
+    </div>
+</div>
+
+<script>
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    sidebar.classList.toggle('show');
+}
+</script>
+{% endblock %}

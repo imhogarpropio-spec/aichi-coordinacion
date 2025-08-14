@@ -1,0 +1,17 @@
+
+<script>
+let timeout;
+
+function resetTimer() {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => {
+        window.location.href = '/logout?inactivo=1';
+    }, 60000);  // 1 minuto = 60000 ms
+}
+
+['mousemove', 'keydown', 'click', 'scroll'].forEach(event => {
+    document.addEventListener(event, resetTimer);
+});
+
+resetTimer();
+</script>

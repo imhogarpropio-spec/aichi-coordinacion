@@ -1,0 +1,204 @@
+{% extends 'base.html' %}
+{% block title %}Delegaciones por Nivel{% endblock %}
+
+{% block content %}
+
+<a href="{{ url_for('dashboard_bp.dashboard') }}" class="btn btn-secondary mb-3">
+  ⬅️ Regresar al Menú principal
+</a>
+
+<h4 class="mb-4">Delegaciones por Nivel</h4>
+
+<!-- ✅ Alerta de éxito única con autocierre -->
+{% with mensajes = get_flashed_messages(with_categories=true) %}
+  {% if mensajes %}
+    {% for categoria, mensaje in mensajes %}
+      <div class="alert alert-{{ categoria }} alert-dismissible fade show animate__animated animate__fadeIn" role="alert">
+        {{ mensaje }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<!-- 📦 Botón de plantilla Excel -->
+<div class="mb-4 d-flex flex-wrap gap-2">
+    <a href="{{ url_for('delegaciones_bp.descargar_plantilla_delegaciones') }}" class="btn btn-outline-primary">
+        📥 Descargar plantilla Excel
+    </a>
+</div>
+
+<form method="POST"
+      action="{{ url_for('delegaciones_bp.subir_excel_delegaciones', delegacion_id=0) }}"
+      enctype="multipart/form-data"
+      class="d-inline-flex align-items-center gap-2">
+
+  <input type="file" name="archivo_excel" accept=".xlsx" class="form-control form-control-sm" required>
+  <button type="submit" class="btn btn-success btn-sm">📤 Subir Excel</button>
+</form>
+
+<!-- ➕ Botón para abrir el modal -->
+<div class="mb-4">
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modal-nueva-delegacion">
+        <i class="bi bi-plus-lg"></i> Agregar delegación
+    </button>
+</div>
+
+<!-- 🪟 Modal para nueva delegación -->
+<div class="modal fade" id="modal-nueva-delegacion" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('delegaciones_bp.vista_delegaciones') }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Agregar delegación</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Clave de delegación</label>
+            <input type="text" name="nombre" class="form-control" placeholder="Ej. DI-127" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Nivel</label>
+            <input type="text" name="nivel" class="form-control" placeholder="Ej. PRIMARIA GENERAL" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Nombre del delegado</label>
+            <input type="text" name="delegado" class="form-control" placeholder="Ej. Juan Pérez">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary">Guardar</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- 🎨 Estilos de tarjetas -->
+<style>
+.card-delegacion {
+    border: 1px solid #dee2e6;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    position: relative;
+    transition: box-shadow 0.3s;
+    width: 100%;
+}
+.card-delegacion:hover {
+    box-shadow: 0 0 0.5rem rgba(0, 0, 0, 0.15);
+}
+.card-actions {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+}
+.card-actions .btn-sm {
+    visibility: hidden;
+}
+.card-delegacion:hover .card-actions .btn-sm {
+    visibility: visible;
+}
+</style>
+
+<!-- 🧾 Tarjetas de delegaciones -->
+{% for nivel, delegaciones in niveles.items() %}
+  <h3 class="mt-4 text-primary fw-bold" style="font-size: 1.6rem;">{{ nivel }}</h3>
+  <div class="row row-cols-1 row-cols-md-2 g-3">
+    {% for delegacion in delegaciones %}
+    <div class="col">
+      <div class="card-delegacion">
+        <div class="d-flex justify-content-between align-items-center">
+          <a 
+            href="{{ url_for('delegaciones_bp.vista_ccts_por_delegacion', delegacion_id=delegacion.id) }}" 
+            class="fw-bold text-decoration-none" 
+            style="color: #f37021 !important;">
+            {{ delegacion.nombre }}
+          </a>
+
+          <div class="card-actions">
+            <button class="btn btn-outline-success btn-sm me-1" data-bs-toggle="modal" data-bs-target="#modal-{{ delegacion.id }}" title="Editar">✏️</button>
+            <form action="{{ url_for('delegaciones_bp.eliminar_delegacion', id=delegacion.id) }}"
+                  method="post" style="display:inline"
+                  onsubmit="return confirm('¿Eliminar la delegación {{ delegacion.nombre }}?');">
+              <button type="submit" class="btn btn-outline-danger btn-sm" title="Eliminar">🗑️</button>
+            </form>
+
+          </div>
+        </div>
+
+        <small class="text-muted">{{ delegacion.nivel }}</small>
+
+        {% if delegacion.delegado %}
+          <div class="text-muted mt-1" style="font-size: 0.9rem;">
+            Delegado(a): <strong>{{ delegacion.delegado }}</strong>
+          </div>
+        {% endif %}
+
+
+      </div>
+    </div>
+
+    <!-- 🪟 Modal de edición -->
+    <div class="modal fade" id="modal-{{ delegacion.id }}" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <form method="POST" action="{{ url_for('delegaciones_bp.editar_delegacion', id=delegacion.id) }}">
+            <div class="modal-header">
+              <h5 class="modal-title">Editar delegación</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-3">
+                <label class="form-label">Nombre</label>
+                <input type="text" name="nuevo_nombre" value="{{ delegacion.nombre }}" class="form-control" required>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Nivel</label>
+                <select name="nuevo_nivel" class="form-select" required>
+                  {% for nivel in niveles_disponibles %}
+                    <option value="{{ nivel }}" {% if nivel == delegacion.nivel %}selected{% endif %}>{{ nivel }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Delegado</label>
+                <input type="text" name="nuevo_delegado" value="{{ delegacion.delegado }}" class="form-control">
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="submit" class="btn btn-primary">Guardar cambios</button>
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+{% endfor %}
+
+<!-- 🔧 Scripts -->
+<script>
+  function eliminarDelegacion(url) {
+    if (confirm('¿Estás seguro de eliminar esta delegación?')) {
+      window.location.href = url;
+    }
+  }
+
+  // ✅ Autocerrar alerta después de 1 segundo
+  setTimeout(() => {
+    const alerta = document.querySelector('.alert');
+    if (alerta) {
+      alerta.classList.remove('show');
+      alerta.classList.add('fade');
+      setTimeout(() => alerta.remove(), 500);
+    }
+  }, 1000);
+</script>
+
+<!-- 🎞️ Animaciones CSS (alerta) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
+
+{% endblock %}

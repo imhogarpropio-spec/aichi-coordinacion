@@ -1,0 +1,9 @@
+aichi.env
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.vscode/
+.idea/
+instance/

@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block title %}Historial de Cambios{% endblock %}
+
+{% block content %}
+<h4 class="mb-4">📜 Historial de cambios - {{ tipo|capitalize }}</h4>
+
+<a href="javascript:history.back()" class="btn btn-outline-primary mb-3">⬅️ Regresar</a>
+
+{% if historial %}
+<div class="table-responsive">
+  <table class="table table-bordered table-hover align-middle shadow-sm">
+    <thead class="table-dark text-center">
+      <tr>
+        <th>🕒 Fecha y hora</th>
+        <th>🔧 Campo modificado</th>
+        <th>🔁 Valor anterior</th>
+        <th>✅ Nuevo valor</th>
+        <th>👤 Modificado por</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for cambio in historial %}
+      <tr>
+        <td class="text-center">{{ cambio.fecha.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{{ cambio.campo }}</td>
+        <td>{{ cambio.valor_anterior }}</td>
+        <td>{{ cambio.valor_nuevo }}</td>
+        <td>{{ cambio.usuario }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="alert alert-info">No se han registrado cambios para este personal.</div>
+{% endif %}
+{% endblock %}
