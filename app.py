@@ -2,6 +2,7 @@ from flask import Flask
 from config import Config
 from extensiones import db, mail, login_manager
 from werkzeug.security import generate_password_hash
+from flask_login import current_user
 
 
 def ensure_admin(app):
@@ -51,6 +52,13 @@ def create_app():
     mail.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = 'auth_bp.login'
+
+    @app.context_processor
+    def inject_role_helpers():
+        def has_role(*roles):
+            # roles: 'admin', 'coordinador', 'secretario', 'delegado'
+            return getattr(current_user, "is_authenticated", False) and getattr(current_user, "rol", None) in roles
+        return dict(has_role=has_role)
 
     # Registrar blueprints
     from routes.auth_routes import auth_bp

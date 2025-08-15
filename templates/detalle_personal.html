@@ -29,10 +29,12 @@
   <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-editar-personal">
     ✏️ Editar
   </button>
+
+  {% if has_role('admin', 'coordinador') %}
   <button class="btn btn-outline-warning btn-sm" data-bs-toggle="modal" data-bs-target="#modal-cambio-adscripcion">
     🔄 Cambio de adscripción
   </button>
-  
+  {% endif %}
 </div>
 
   <!-- Lista de datos -->
@@ -188,6 +190,7 @@
   </div>
 </div>
 
+{% if has_role('admin', 'coordinador') %}
 <div class="modal fade" id="modal-cambio-adscripcion" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
@@ -226,6 +229,7 @@
     </div>
   </div>
 </div>
+{% endif %}
 
 
 <script>

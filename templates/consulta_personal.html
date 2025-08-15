@@ -39,13 +39,21 @@
   {% endif %}
 {% endwith %}
 
+{% if has_role('admin') %}
 <div class="mb-4 d-flex flex-wrap gap-2">
-<a class="btn btn-outline-primary" href="{{ url_for('static', filename='plantillas/plantilla_personal.xlsx') }}">📥 Descargar plantilla Excel</a>
-<form action="{{ url_for('personal_bp.subir_excel_personal', cct=plantel.cct) }}" class="d-flex align-items-center gap-2" enctype="multipart/form-data" method="POST">
-<input accept=".xlsx" class="form-control" name="archivo_excel" required="" type="file"/>
-<button class="btn btn-success" type="submit">📤 Subir Excel</button>
-</form>
+  <a class="btn btn-outline-primary" href="{{ url_for('static', filename='plantillas/plantilla_personal.xlsx') }}">
+    📥 Descargar plantilla Excel
+  </a>
+  <form action="{{ url_for('personal_bp.subir_excel_personal', cct=plantel.cct) }}"
+        class="d-flex align-items-center gap-2"
+        enctype="multipart/form-data"
+        method="POST">
+    <input accept=".xlsx" class="form-control" name="archivo_excel" required type="file"/>
+    <button class="btn btn-success" type="submit">📤 Subir Excel</button>
+  </form>
 </div>
+{% endif %}
+
 <div class="mb-4">
 <button class="btn btn-primary" data-bs-target="#modal-nuevo-personal" data-bs-toggle="modal">
     ➕ Agregar personal
@@ -145,27 +153,136 @@
 .card-personal:hover .card-actions .btn-sm {
   visibility: visible;
 }
+/* Amarillo cuando está en baja en proceso */
+.card-warning {
+  background-color: #fff3cd;
+  border-color: #ffeeba;
+}
+/* Badge pegado a la esquina inferior derecha de la tarjeta */
+.status-chip {
+  position: absolute;
+  right: .5rem;
+  bottom: .5rem;
+  z-index: 2;
+  pointer-events: none; /* no tapa clics a botones cercanos */
+}
+
 </style>
 <div class="row row-cols-1 row-cols-md-2 g-3">
   {% for persona in personal %}
   <div class="col">
-<div class="card-personal">
+<div class="card-personal {% if persona.estatus_membresia == 'BAJA EN PROCESO' %}card-warning{% endif %}">
 <div class="d-flex justify-content-between align-items-center">
 <a class="fw-bold text-decoration-none" href="{{ url_for('personal_bp.vista_detalle_personal', id=persona.id) }}" style="color: #f37021 !important;">
           {{ persona.apellido_paterno }} {{ persona.apellido_materno }} {{ persona.nombre }}
         </a>
 <div class="card-actions">
+    {# Badge de estado #}
+
+    {# Botón Solicitar Baja (roles autorizados para pedirla) #}
+    {% if has_role('admin', 'coordinador', 'delegado', 'secretario') %}
+      <button
+        type="button"
+        class="btn btn-outline-warning btn-sm"
+        data-bs-toggle="modal"
+        data-bs-target="#modal-solicitar-baja-{{ persona.id }}">
+        ⛳ Solicitar baja
+      </button>
+    {% endif %}
+
+    {% if persona.estatus_membresia == 'BAJA EN PROCESO' and has_role('admin','coordinador') %}
+      <button
+        type="button"
+        class="btn btn-outline-secondary btn-sm"
+        data-bs-toggle="modal"
+        data-bs-target="#modal-rechazar-baja-{{ persona.id }}">
+        🚫 Rechazar baja
+      </button>
+    {% endif %}
+
+    {% if has_role('admin', 'coordinador') %}
   <form action="{{ url_for('personal_bp.eliminar_personal', id=persona.id) }}"
         method="post" style="display:inline"
         onsubmit="return confirm('¿Eliminar este registro?');">
     {# Si luego configuras Flask-WTF, aquí pones: {{ csrf_token() }} #}
     <button type="submit" class="btn btn-outline-danger btn-sm">🗑️</button>
   </form>
+  {% endif %}
 </div>
 </div>
 <small class="text-muted">{{ persona.funcion }}</small>
+{# Badge fijo en esquina inferior derecha de la tarjeta #}
+{% if persona.estatus_membresia == 'BAJA EN PROCESO' %}
+  <span class="status-chip badge bg-warning text-dark">Baja en proceso</span>
+{% endif %}
+
 </div>
 </div>
+
+{# Modal Solicitar Baja (para esta persona) #}
+<div class="modal fade" id="modal-solicitar-baja-{{ persona.id }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('personal_bp.solicitar_baja', id=persona.id) }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Solicitar baja</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-2">
+            Trabajador: <strong>{{ persona.apellido_paterno }} {{ persona.apellido_materno }} {{ persona.nombre }}</strong><br>
+            CCT: <strong>{{ persona.cct or persona.plantel.cct }}</strong>
+          </p>
+          <div class="mb-3">
+            <label class="form-label">Motivo de la baja <span class="text-danger">*</span></label>
+            <textarea name="motivo_baja" class="form-control" rows="4" required></textarea>
+          </div>
+          <div class="form-text">
+            Se enviará notificación al área correspondiente y se registrará en el historial del trabajador.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-warning" type="submit">Enviar solicitud</button>
+          <button class="btn btn-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# Modal Rechazar Baja #}
+<div class="modal fade" id="modal-rechazar-baja-{{ persona.id }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('personal_bp.rechazar_baja', id=persona.id) }}">
+        {# Si usas CSRF, agrega aquí {{ csrf_token() }} #}
+        <div class="modal-header">
+          <h5 class="modal-title">Rechazar solicitud de baja</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-2">
+            Trabajador: <strong>{{ persona.apellido_paterno }} {{ persona.apellido_materno }} {{ persona.nombre }}</strong><br>
+            CCT: <strong>{{ persona.cct or persona.plantel.cct }}</strong>
+          </p>
+          <div class="mb-3">
+            <label class="form-label">Motivo del rechazo <span class="text-danger">*</span></label>
+            <textarea name="motivo_rechazo" class="form-control" rows="4" required></textarea>
+          </div>
+          <div class="form-text">
+            Se registrará en el historial y se enviará una notificación. El estatus volverá a ACTIVO.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
+          <button class="btn btn-warning" type="submit">Rechazar baja</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+
   {% endfor %}
 </div>
 <script>

@@ -326,14 +326,15 @@ def eliminar_observacion(obs_id):
 @roles_required('admin')
 def cambiar_adscripcion(id):
     persona = Personal.query.get_or_404(id)
-    nuevo_cct = request.form.get("nuevo_cct")
-    motivo = request.form.get("motivo", "").strip()
+    nuevo_cct = (request.form.get("nuevo_cct") or "").strip()
+    motivo = (request.form.get("motivo") or "").strip()
 
+    # Validaciones básicas
     if not nuevo_cct:
         flash("⚠️ Debes seleccionar un CCT válido.", "warning")
         return redirect(url_for("personal_bp.vista_detalle_personal", id=id))
 
-    if nuevo_cct == persona.cct:
+    if nuevo_cct == (persona.cct or "").strip():
         flash("ℹ️ El personal ya está adscrito a ese CCT.", "info")
         return redirect(url_for("personal_bp.vista_detalle_personal", id=id))
 
@@ -341,19 +342,26 @@ def cambiar_adscripcion(id):
         flash("⚠️ Debes escribir un motivo del cambio.", "warning")
         return redirect(url_for("personal_bp.vista_detalle_personal", id=id))
 
+    # Datos previos para auditoría
+    cct_anterior = persona.cct
+    estado_anterior = persona.estatus_membresia or ""
+
+    # Resolver plantel destino (si aplica mostrar nombre en observación)
+    nuevo_plantel = Plantel.query.filter_by(cct=nuevo_cct).first()
+    nombre_plantel = nuevo_plantel.nombre if nuevo_plantel else ""
+
+    # HISTORIAL: cambio de CCT (antes → después)
     registrar_historial(
         entidad="personal",
         campo="cct",
-        valor_anterior=persona.cct,
+        valor_anterior=cct_anterior,
         valor_nuevo=nuevo_cct,
         entidad_id=persona.id,
         usuario=current_user.nombre,
         tipo="cambio de adscripción"
     )
 
-    nuevo_plantel = Plantel.query.filter_by(cct=nuevo_cct).first()
-    nombre_plantel = nuevo_plantel.nombre if nuevo_plantel else ''
-
+    # OBSERVACIÓN: motivo del cambio
     observacion = Observacion(
         personal_id=persona.id,
         usuario_id=current_user.id,
@@ -362,14 +370,35 @@ def cambiar_adscripcion(id):
     )
     db.session.add(observacion)
 
+    # APLICAR cambio y LIMPIAR estado "baja en proceso"
     persona.cct = nuevo_cct
+    persona.estatus_membresia = "ACTIVO"   # <- vuelve al color normal en la UI
+
+    # HISTORIAL: dejar rastro de que el estatus se limpió/normalizó tras el movimiento
+    registrar_historial(
+        entidad="personal",
+        campo="estatus_membresia",
+        valor_anterior=estado_anterior,
+        valor_nuevo="ACTIVO (tras cambio de adscripción)",
+        entidad_id=persona.id,
+        usuario=current_user.nombre,
+        tipo="ADSCRIPCION_CAMBIO"
+    )
+
+    # GUARDAR todo junto
     db.session.commit()
+
+    # NOTIFICACIÓN: incluye CCT anterior → nuevo y aclaración de estatus
     registrar_notificacion(
-        f"{current_user.nombre} cambió la adscripción de {persona.nombre} ({getattr(persona, 'curp', 'SIN CURP')}) a {nuevo_cct}",
+        f"{current_user.nombre} cambió la adscripción de {persona.apellido_paterno} {persona.apellido_materno} {persona.nombre} "
+        f"({getattr(persona, 'curp', 'SIN CURP')}) de {cct_anterior} a {nuevo_cct}. "
+        f"Estatus regresó a ACTIVO.",
         tipo="personal"
     )
-    flash("✅ Adscripción actualizada y observación registrada.", "success")
+
+    flash("✅ Adscripción actualizada, estado normalizado y observación registrada.", "success")
     return redirect(url_for("personal_bp.vista_detalle_personal", id=persona.id))
+
 
 @personal_bp.route('/personal/<delegacion>/<cct>')
 @login_required
@@ -491,3 +520,105 @@ def obtener_ccts_por_nivel():
     ]
 
     return jsonify(resultado)
+
+
+@personal_bp.route('/solicitar_baja/<int:id>', methods=['POST'])
+@roles_required('admin', 'coordinador', 'delegado', 'secretario')
+def solicitar_baja(id):
+    persona = Personal.query.get_or_404(id)
+    motivo = (request.form.get('motivo_baja') or '').strip()
+
+    if not motivo:
+        flash('Debes indicar el motivo de la baja.', 'warning')
+        return redirect(url_for('personal_bp.vista_detalle_personal', id=id))
+
+    # 1) Historial
+    registrar_historial(
+        entidad='personal',
+        campo='solicitud_baja',
+        valor_anterior='',
+        valor_nuevo=f"Motivo: {motivo}",
+        entidad_id=persona.id,
+        usuario=getattr(current_user, 'nombre', None),
+        tipo='BAJA'
+    )
+
+    # 2) Notificación
+    nombre_completo = f"{persona.apellido_paterno} {persona.apellido_materno} {persona.nombre}".strip()
+    cct_texto = getattr(persona, 'cct', None) or getattr(persona, 'plantel', None).cct
+
+    descripcion_noti = (
+        f"Solicitud de baja de personal: {nombre_completo} "
+        f"(CCT {cct_texto}). Motivo: {motivo}. "
+        f"Solicitado por: {getattr(current_user,'nombre','Usuario')}"
+    )
+
+    registrar_notificacion(descripcion_noti, tipo='personal')
+
+
+
+
+    # 3) Marcar estado visible en UI
+    persona.estatus_membresia = 'BAJA EN PROCESO'
+    db.session.commit()
+
+    flash('Solicitud de baja enviada y registrada. La ficha quedó en “Baja en proceso”.', 'success')
+
+    # Redirige al listado del plantel (ajusta si usas otra ruta)
+    try:
+        return redirect(url_for('personal_bp.vista_personal',
+                                delegacion=persona.plantel.delegacion.nombre,
+                                cct=cct_texto))
+    except Exception:
+        return redirect(url_for('personal_bp.vista_detalle_personal', id=persona.id))
+    
+
+@personal_bp.route('/rechazar_baja/<int:id>', methods=['POST'])
+@roles_required('admin', 'coordinador')
+def rechazar_baja(id):
+    persona = Personal.query.get_or_404(id)
+
+    # Permite rechazar solo si realmente está en proceso
+    if (persona.estatus_membresia or '').upper() != 'BAJA EN PROCESO':
+        flash('Solo puedes rechazar bajas que estén en proceso.', 'warning')
+        return redirect(url_for('personal_bp.vista_detalle_personal', id=id))
+
+    motivo = (request.form.get('motivo_rechazo') or '').strip()
+    if not motivo:
+        flash('Debes indicar el motivo del rechazo.', 'warning')
+        return redirect(url_for('personal_bp.vista_detalle_personal', id=id))
+
+    estado_anterior = persona.estatus_membresia or ''
+
+    # 1) Historial
+    registrar_historial(
+        entidad='personal',
+        campo='rechazo_baja',
+        valor_anterior=estado_anterior,
+        valor_nuevo=f"Rechazada. Motivo: {motivo}",
+        entidad_id=persona.id,
+        usuario=getattr(current_user, 'nombre', None),
+        tipo='BAJA_RECHAZADA'
+    )
+
+    # 2) Notificación
+    nombre_completo = f"{persona.apellido_paterno} {persona.apellido_materno} {persona.nombre}".strip()
+    cct_texto = getattr(persona, 'cct', None) or getattr(persona, 'plantel', None).cct
+    descripcion_noti = (
+        f"Rechazo de solicitud de baja para {nombre_completo} (CCT {cct_texto}). "
+        f"Motivo: {motivo}. Por: {getattr(current_user,'nombre','Usuario')}."
+    )
+    registrar_notificacion(descripcion_noti, tipo='personal')
+
+    # 3) Revertir estatus -> la tarjeta vuelve a color normal
+    persona.estatus_membresia = 'ACTIVO'
+    db.session.commit()
+
+    flash('Solicitud de baja rechazada. Estatus regresó a ACTIVO.', 'success')
+
+    try:
+        return redirect(url_for('personal_bp.vista_personal',
+                                delegacion=persona.plantel.delegacion.nombre,
+                                cct=cct_texto))
+    except Exception:
+        return redirect(url_for('personal_bp.vista_detalle_personal', id=persona.id))

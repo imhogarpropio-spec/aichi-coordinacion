@@ -22,6 +22,7 @@
 {% endwith %}
 
 <!-- 📦 Botón de plantilla Excel -->
+{% if has_role('admin') %}
 <div class="mb-4 d-flex flex-wrap gap-2">
     <a href="{{ url_for('delegaciones_bp.descargar_plantilla_delegaciones') }}" class="btn btn-outline-primary">
         📥 Descargar plantilla Excel
@@ -36,13 +37,17 @@
   <input type="file" name="archivo_excel" accept=".xlsx" class="form-control form-control-sm" required>
   <button type="submit" class="btn btn-success btn-sm">📤 Subir Excel</button>
 </form>
+{% endif %}
 
+
+{% if has_role('admin', 'coordinador') %}
 <!-- ➕ Botón para abrir el modal -->
 <div class="mb-4">
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modal-nueva-delegacion">
         <i class="bi bi-plus-lg"></i> Agregar delegación
     </button>
 </div>
+
 
 <!-- 🪟 Modal para nueva delegación -->
 <div class="modal fade" id="modal-nueva-delegacion" tabindex="-1" aria-hidden="true">
@@ -75,6 +80,7 @@
     </div>
   </div>
 </div>
+{% endif %}
 
 <!-- 🎨 Estilos de tarjetas -->
 <style>
@@ -118,14 +124,20 @@
           </a>
 
           <div class="card-actions">
-            <button class="btn btn-outline-success btn-sm me-1" data-bs-toggle="modal" data-bs-target="#modal-{{ delegacion.id }}" title="Editar">✏️</button>
-            <form action="{{ url_for('delegaciones_bp.eliminar_delegacion', id=delegacion.id) }}"
-                  method="post" style="display:inline"
-                  onsubmit="return confirm('¿Eliminar la delegación {{ delegacion.nombre }}?');">
-              <button type="submit" class="btn btn-outline-danger btn-sm" title="Eliminar">🗑️</button>
-            </form>
+              {% if has_role('admin', 'coordinador') %}
+                  <button class="btn btn-outline-success btn-sm me-1"
+                          data-bs-toggle="modal"
+                          data-bs-target="#modal-{{ delegacion.id }}"
+                          title="Editar">✏️</button>
 
+                  <form action="{{ url_for('delegaciones_bp.eliminar_delegacion', id=delegacion.id) }}"
+                        method="post" style="display:inline"
+                        onsubmit="return confirm('¿Eliminar la delegación {{ delegacion.nombre }}?');">
+                    <button type="submit" class="btn btn-outline-danger btn-sm" title="Eliminar">🗑️</button>
+                  </form>
+              {% endif %}
           </div>
+
         </div>
 
         <small class="text-muted">{{ delegacion.nivel }}</small>
@@ -141,40 +153,42 @@
     </div>
 
     <!-- 🪟 Modal de edición -->
-    <div class="modal fade" id="modal-{{ delegacion.id }}" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-          <form method="POST" action="{{ url_for('delegaciones_bp.editar_delegacion', id=delegacion.id) }}">
-            <div class="modal-header">
-              <h5 class="modal-title">Editar delegación</h5>
-              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-            </div>
-            <div class="modal-body">
-              <div class="mb-3">
-                <label class="form-label">Nombre</label>
-                <input type="text" name="nuevo_nombre" value="{{ delegacion.nombre }}" class="form-control" required>
+    {% if has_role('admin', 'coordinador') %}
+      <div class="modal fade" id="modal-{{ delegacion.id }}" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <form method="POST" action="{{ url_for('delegaciones_bp.editar_delegacion', id=delegacion.id) }}">
+              <div class="modal-header">
+                <h5 class="modal-title">Editar delegación</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
               </div>
-              <div class="mb-3">
-                <label class="form-label">Nivel</label>
-                <select name="nuevo_nivel" class="form-select" required>
-                  {% for nivel in niveles_disponibles %}
-                    <option value="{{ nivel }}" {% if nivel == delegacion.nivel %}selected{% endif %}>{{ nivel }}</option>
-                  {% endfor %}
-                </select>
+              <div class="modal-body">
+                <div class="mb-3">
+                  <label class="form-label">Nombre</label>
+                  <input type="text" name="nuevo_nombre" value="{{ delegacion.nombre }}" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Nivel</label>
+                  <select name="nuevo_nivel" class="form-select" required>
+                    {% for nivel in niveles_disponibles %}
+                      <option value="{{ nivel }}" {% if nivel == delegacion.nivel %}selected{% endif %}>{{ nivel }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Delegado</label>
+                  <input type="text" name="nuevo_delegado" value="{{ delegacion.delegado }}" class="form-control">
+                </div>
               </div>
-              <div class="mb-3">
-                <label class="form-label">Delegado</label>
-                <input type="text" name="nuevo_delegado" value="{{ delegacion.delegado }}" class="form-control">
+              <div class="modal-footer">
+                <button type="submit" class="btn btn-primary">Guardar cambios</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
               </div>
-            </div>
-            <div class="modal-footer">
-              <button type="submit" class="btn btn-primary">Guardar cambios</button>
-              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
       </div>
-    </div>
+    {% endif %}
     {% endfor %}
   </div>
 {% endfor %}
