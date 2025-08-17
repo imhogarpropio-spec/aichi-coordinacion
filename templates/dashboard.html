@@ -58,6 +58,13 @@
                     {% endif %}
 
                     {% if current_user.rol == 'admin' %}
+                    <a href="{{ url_for('dashboard_bp.reporte_general_zip') }}" class="btn btn-outline-success">
+                        📦 Descargar Reporte General (ZIP)
+                    </a>
+                    {% endif %}
+
+
+                    {% if current_user.rol == 'admin' %}
                     <a href="{{ url_for('accesos_bp.registro_accesos') }}" class="btn btn-outline-dark position-relative">
                         🕓 Ver registros de acceso
 
