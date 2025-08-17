@@ -38,6 +38,8 @@
   </button>
 </div>
 
+
+
 <!-- Modal para nuevo CCT -->
 <div class="modal fade" id="modal-nuevo-cct" tabindex="-1">
   <div class="modal-dialog modal-xl modal-dialog-centered">
@@ -77,6 +79,30 @@
   </div>
 </div>
 {% endif %}
+
+<!-- ✅ Botones de reportes visibles para TODOS -->
+<div class="mb-3 d-flex flex-wrap gap-2">
+  <a href="{{ url_for('delegaciones_bp.reporte_ccts_excel', delegacion_id=delegacion.id) }}"
+     class="btn btn-outline-success">
+    📊 Exportar CCTs de {{ delegacion.nombre }} (Excel)
+  </a>
+  <a href="{{ url_for('delegaciones_bp.reporte_ccts_pdf', delegacion_id=delegacion.id) }}"
+     class="btn btn-outline-danger">
+    🧾 Exportar CCTs de {{ delegacion.nombre }} (PDF)
+  </a>
+</div>
+
+<!-- ✅ Reportes de PERSONAL (visibles para TODOS) -->
+<div class="mb-3 d-flex flex-wrap gap-2">
+  <a href="{{ url_for('delegaciones_bp.reporte_personal_excel', delegacion_id=delegacion.id) }}"
+     class="btn btn-outline-success">
+    👥 Exportar PERSONAL de {{ delegacion.nombre }} (Excel)
+  </a>
+  <a href="{{ url_for('delegaciones_bp.reporte_personal_pdf', delegacion_id=delegacion.id) }}"
+     class="btn btn-outline-danger">
+    👥 Exportar PERSONAL de {{ delegacion.nombre }} (PDF)
+  </a>
+</div>
 
 <!-- Estilo tarjetas -->
 <style>

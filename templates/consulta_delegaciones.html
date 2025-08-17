@@ -48,6 +48,39 @@
     </button>
 </div>
 
+<div class="mb-3 d-flex flex-wrap gap-2">
+  <a href="{{ url_for('delegaciones_bp.reporte_delegaciones_excel') }}" class="btn btn-outline-success">
+    📊 Exportar Excel
+  </a>
+  <a href="{{ url_for('delegaciones_bp.reporte_delegaciones_pdf') }}" class="btn btn-outline-danger">
+    🧾 Exportar PDF
+  </a>
+</div>
+
+<div class="mb-3 d-flex flex-wrap gap-2">
+  <!-- Reporte global de planteles (respetará el rol en backend) -->
+  <a href="{{ url_for('delegaciones_bp.reporte_ccts_excel') }}" class="btn btn-outline-success">
+    📊 Exportar CCTs (Excel)
+  </a>
+  <a href="{{ url_for('delegaciones_bp.reporte_ccts_pdf') }}" class="btn btn-outline-danger">
+    🧾 Exportar CCTs (PDF)
+  </a>
+</div>
+
+{% if has_role('admin', 'coordinador') %}
+<div class="mb-3 d-flex flex-wrap gap-2">
+  <!-- Reportes de PERSONAL (todas las delegaciones) -->
+  <a href="{{ url_for('delegaciones_bp.reporte_personal_excel') }}"
+     class="btn btn-outline-success">
+    👥 Exportar PERSONAL (todas) — Excel
+  </a>
+  <a href="{{ url_for('delegaciones_bp.reporte_personal_pdf') }}"
+     class="btn btn-outline-danger">
+    👥 Exportar PERSONAL (todas) — PDF
+  </a>
+</div>
+{% endif %}
+
 
 <!-- 🪟 Modal para nueva delegación -->
 <div class="modal fade" id="modal-nueva-delegacion" tabindex="-1" aria-hidden="true">

@@ -1,7 +1,10 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_from_directory, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_from_directory, jsonify, send_file, abort
 from flask_login import login_required, current_user
+from io import BytesIO
 from datetime import datetime, timedelta
+
 from models import db, Plantel, Personal, Usuario, HistorialCambios, Delegacion, ObservacionPersonal as Observacion
+
 from utils import registrar_historial, registrar_notificacion
 from sqlalchemy import distinct, func
 import pandas as pd
@@ -9,8 +12,156 @@ import re
 from sqlalchemy.exc import IntegrityError
 from authz import roles_required
 
+# Excel
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
+
+# PDF
+from reportlab.lib.pagesizes import letter, landscape
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepInFrame, BaseDocTemplate, Frame, PageTemplate, NextPageTemplate, PageBreak, KeepTogether
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+
 
 personal_bp = Blueprint('personal_bp', __name__)
+
+def _nombre_usuario_por_id(uid):
+    if not uid:
+        return "Usuario"
+    u = Usuario.query.get(uid)
+    return u.nombre if u else "Usuario"
+
+
+def _check_access_persona(persona: Personal):
+    """Delegado: solo si la persona pertenece a su delegación."""
+    if current_user.rol == 'delegado':
+        delega_id = getattr(persona.plantel, 'delegacion_id', None)
+        if delega_id != current_user.delegacion_id:
+            abort(403)
+
+def _fetch_ficha_persona(persona_id: int):
+    persona = Personal.query.get_or_404(persona_id)
+    _check_access_persona(persona)
+
+    plantel = persona.plantel
+    delega  = plantel.delegacion if plantel else None
+
+    # Observaciones (más recientes primero)
+    obs = sorted(persona.observaciones, key=lambda o: o.fecha, reverse=True)
+
+    # Historial (más recientes primero)
+    hist = (HistorialCambios.query
+            .filter_by(entidad='personal', entidad_id=persona.id)
+            .order_by(HistorialCambios.fecha.desc())
+            .all())
+
+    datos = {
+        "generado_por": getattr(current_user, "nombre", "Sistema"),
+        "generado_en": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "delegacion": getattr(delega, "nombre", ""),
+        "nivel": getattr(delega, "nivel", ""),
+        "plantel": {
+            "cct": plantel.cct if plantel else (persona.cct or ""),
+            "nombre": plantel.nombre if plantel else "",
+            "direccion": f"{plantel.calle or ''} {plantel.num_exterior or ''}{(' Int. ' + plantel.num_interior) if plantel and plantel.num_interior else ''}, {plantel.colonia or ''}, {plantel.municipio or ''}, CP {plantel.cp or ''}" if plantel else ""
+        },
+        "persona": persona,
+        "observaciones": obs,
+        "historial": hist,
+    }
+    return datos
+
+def PKIF(text, width, height, bold=False):
+    para = P(text, bold=bold)
+    return KeepInFrame(width, height, [para], mode="shrink")  # ajusta fuente solo si es necesario
+
+def _check_access_cct(cct: str):
+    """Valida que el usuario pueda acceder al CCT (delegado solo su delegación)."""
+    plantel = Plantel.query.filter_by(cct=cct).first()
+    if not plantel:
+        abort(404)
+    if current_user.rol == 'delegado':
+        if plantel.delegacion_id != current_user.delegacion_id:
+            abort(403)
+    return plantel
+
+def _fetch_personal_detalle_por_cct(cct: str):
+    """
+    Devuelve:
+    {
+      'generado_por': str, 'generado_en': str,
+      'delegacion': 'Nombre delegación', 'nivel': 'PRIMARIA ...',
+      'plantel': {'cct':..., 'nombre':..., 'direccion':...},
+      'rows': [ {todos los campos...}, ... ],
+      'estadistica': {'H': int, 'M': int, 'T': int, 'funciones': {funcion: cnt, ...}}
+    }
+    """
+    plantel = _check_access_cct(cct)
+    delega = Delegacion.query.get(plantel.delegacion_id)
+
+    # Trae personal del CCT
+    personas = (Personal.query
+            .filter(Personal.cct == cct)
+            .order_by(Personal.apellido_paterno.asc(), Personal.apellido_materno.asc(), Personal.nombre.asc())
+            .all())
+
+    rows = []
+    hombres = mujeres = total = 0
+    funciones = {}
+
+    for p in personas:
+        genero = (p.genero or '').upper()
+        if genero == 'H':
+            hombres += 1
+        elif genero == 'M':
+            mujeres += 1
+        total += 1
+
+        func = (p.funcion or 'SIN FUNCIÓN').upper()
+        funciones[func] = funciones.get(func, 0) + 1
+
+        rows.append({
+            "apellido_paterno": p.apellido_paterno or "",
+            "apellido_materno": p.apellido_materno or "",
+            "nombre": p.nombre or "",
+            "genero": p.genero or "",
+            "rfc": p.rfc or "",
+            "curp": p.curp or "",
+            "clave_presupuestal": p.clave_presupuestal or "",
+            "funcion": p.funcion or "",
+            "grado_estudios": p.grado_estudios or "",
+            "titulado": p.titulado or "",
+            "fecha_ingreso": p.fecha_ingreso.strftime("%Y-%m-%d") if getattr(p, "fecha_ingreso", None) else "",
+            "fecha_baja_jubilacion": p.fecha_baja_jubilacion.strftime("%Y-%m-%d") if getattr(p, "fecha_baja_jubilacion", None) else "",
+            "estatus_membresia": p.estatus_membresia or "",
+            "nombramiento": p.nombramiento or "",
+            "domicilio": p.domicilio or "",
+            "numero": p.numero or "",
+            "localidad": p.localidad or "",
+            "colonia": p.colonia or "",
+            "municipio": p.municipio or "",
+            "cp": p.cp or "",
+            "tel1": p.tel1 or "",
+            "tel2": p.tel2 or "",
+            "correo_electronico": p.correo_electronico or "",
+        })
+
+    data = {
+        "generado_por": getattr(current_user, "nombre", "Sistema"),
+        "generado_en": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "delegacion": delega.nombre if delega else "",
+        "nivel": delega.nivel if delega else "",
+        "plantel": {
+            "cct": plantel.cct,
+            "nombre": plantel.nombre or "",
+            "direccion": f"{plantel.calle or ''} {plantel.num_exterior or ''}{(' Int. ' + plantel.num_interior) if plantel.num_interior else ''}, {plantel.colonia or ''}, {plantel.municipio or ''}, CP {plantel.cp or ''}"
+        },
+        "rows": rows,
+        "estadistica": {"H": hombres, "M": mujeres, "T": total, "funciones": dict(sorted(funciones.items()))}
+    }
+    return data
 
 @personal_bp.route("/busqueda_personal", methods=["GET", "POST"])
 @login_required
@@ -622,3 +773,413 @@ def rechazar_baja(id):
                                 cct=cct_texto))
     except Exception:
         return redirect(url_for('personal_bp.vista_detalle_personal', id=persona.id))
+    
+@personal_bp.route("/personal/<string:cct>/reporte/excel")
+@login_required
+def reporte_personal_cct_excel(cct):
+    data = _fetch_personal_detalle_por_cct(cct)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Resumen"
+
+    bold = Font(bold=True)
+    center = Alignment(horizontal="center", vertical="center")
+    header_fill = PatternFill(start_color="ECECEC", end_color="ECECEC", fill_type="solid")
+    thin = Side(style="thin", color="AAAAAA")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    # Cabecera
+    ws.merge_cells("A1:F1")
+    ws["A1"] = "REPORTE DETALLADO DE PERSONAL POR CCT"
+    ws["A1"].font = Font(size=14, bold=True); ws["A1"].alignment = center
+    ws.merge_cells("A2:F2")
+    ws["A2"] = f"Delegación: {data['delegacion']} — {data['nivel']}  |  Plantel: {data['plantel']['nombre']} ({data['plantel']['cct']})"
+    ws["A2"].alignment = center
+    ws.merge_cells("A3:F3")
+    ws["A3"] = f"Generado por: {data['generado_por']}  |  Fecha: {data['generado_en']}"
+    ws["A3"].alignment = center
+
+    ws.append([])
+    ws.append(["Hombres", "Mujeres", "Total"])
+    for c in ws[5]:
+        c.font = bold; c.fill = header_fill; c.alignment = center; c.border = border
+    ws.append([data["estadistica"]["H"], data["estadistica"]["M"], data["estadistica"]["T"]])
+    ws.append([])
+
+    # Tabla de funciones
+    ws.append(["Función", "Cantidad"])
+    ws["A8"].font = bold; ws["B8"].font = bold
+    ws["A8"].fill = header_fill; ws["B8"].fill = header_fill
+    ws["A8"].alignment = center; ws["B8"].alignment = center
+    ws["A8"].border = ws["B8"].border = border
+
+    fila = 9
+    for f, cnt in data["estadistica"]["funciones"].items():
+        ws.cell(row=fila, column=1, value=f).border = border
+        ws.cell(row=fila, column=2, value=cnt).border = border
+        fila += 1
+
+    # Hoja detalle
+    ws_det = wb.create_sheet("Detalle")
+    headers = [
+        "Apellido paterno","Apellido materno","Nombre","Género","RFC","CURP",
+        "Clave presupuestal","Función","Grado estudios","Titulado",
+        "Fecha ingreso","Fecha baja/jub","Estatus membresía","Nombramiento",
+        "Domicilio","Número","Localidad","Colonia","Municipio","CP",
+        "Tel 1","Tel 2","Correo"
+    ]
+    ws_det.append(headers)
+    for cell in ws_det[1]:
+        cell.font = bold; cell.fill = header_fill; cell.alignment = center; cell.border = border
+
+    for r in data["rows"]:
+        ws_det.append([
+            r["apellido_paterno"], r["apellido_materno"], r["nombre"], r["genero"], r["rfc"], r["curp"],
+            r["clave_presupuestal"], r["funcion"], r["grado_estudios"], r["titulado"],
+            r["fecha_ingreso"], r["fecha_baja_jubilacion"], r["estatus_membresia"], r["nombramiento"],
+            r["domicilio"], r["numero"], r["localidad"], r["colonia"], r["municipio"], r["cp"],
+            r["tel1"], r["tel2"], r["correo_electronico"]
+        ])
+
+    # Bordes y ancho aproximado
+    for row in ws_det.iter_rows(min_row=1, max_row=ws_det.max_row, min_col=1, max_col=len(headers)):
+        for c in row:
+            c.border = border
+    for col_idx in range(1, len(headers)+1):
+        max_len = 0
+        for rr in range(1, ws_det.max_row+1):
+            v = ws_det.cell(row=rr, column=col_idx).value
+            max_len = max(max_len, len(str(v)) if v else 0)
+        ws_det.column_dimensions[get_column_letter(col_idx)].width = min(max_len + 3, 35)
+
+    ws_det.freeze_panes = "A2"
+
+    output = BytesIO()
+    wb.save(output); output.seek(0)
+    filename = f"personal_{data['plantel']['cct']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return send_file(output, as_attachment=True, download_name=filename,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+@personal_bp.route("/personal/<string:cct>/reporte/pdf")
+@login_required
+def reporte_personal_cct_pdf(cct):
+    data = _fetch_personal_detalle_por_cct(cct)
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=landscape(letter),
+        leftMargin=20, rightMargin=20, topMargin=22, bottomMargin=22
+    )
+
+    styles = getSampleStyleSheet()
+    small = ParagraphStyle(
+        "small",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8.5,
+        leading=10.2,
+        wordWrap="CJK",
+        spaceBefore=0,
+        spaceAfter=0,
+    )
+    small_bold = ParagraphStyle("small_bold", parent=small, fontName="Helvetica-Bold")
+    title = ParagraphStyle("title", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=18, leading=22)
+
+    def P(txt, bold=False):
+        return Paragraph("" if txt is None else str(txt), small_bold if bold else small)
+
+    story = []
+
+    # --- Encabezado / resumen ---
+    story.append(Paragraph("<b>REPORTE DETALLADO DE PERSONAL POR CCT</b>", title))
+    story.append(P(f"Delegación: {data['delegacion']} — {data['nivel']}  |  "
+                   f"Plantel: {data['plantel']['nombre']} ({data['plantel']['cct']})"))
+    story.append(P(f"Generado por: {data['generado_por']}  |  Fecha: {data['generado_en']}"))
+    story.append(Spacer(1, 8))
+
+    # Totales
+    tot = Table(
+        [[P("Hombres", True), P("Mujeres", True), P("Total", True)],
+         [P(data["estadistica"]["H"]), P(data["estadistica"]["M"]), P(data["estadistica"]["T"])]],
+        colWidths=[2.7*cm, 2.7*cm, 2.7*cm],
+        hAlign="LEFT",
+    )
+    tot.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#ECECEC")),
+        ("GRID", (0,0), (-1,-1), 0.25, colors.grey),
+        ("ALIGN", (0,0), (-1,-1), "CENTER"),
+    ]))
+    story.append(tot)
+    story.append(Spacer(1, 8))
+
+    # --- Tarjeta por persona (varias filas) ---
+    col_w = doc.width / 3.0  # tres columnas iguales para las filas “compactas”
+
+    for r in data["rows"]:
+        nombre = f"{r['apellido_paterno']} {r['apellido_materno']} {r['nombre']}".strip()
+
+        # Faja con el nombre (1 sola celda, ancho completo)
+        head = Table([[P(nombre, True)]], colWidths=[doc.width], hAlign="LEFT")
+        head.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#F0F0F0")),
+            ("BOX", (0,0), (-1,-1), 0.5, colors.black),
+            ("LEFTPADDING", (0,0), (-1,-1), 6),
+            ("RIGHTPADDING", (0,0), (-1,-1), 6),
+            ("TOPPADDING", (0,0), (-1,-1), 4),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+        ]))
+
+        # Filas compactas (3 columnas por fila). Nada de tablas anidadas en paralelo.
+        filas = [
+            [P(f"Género: {r['genero']}"), P(f"RFC: {r['rfc']}"), P(f"CURP: {r['curp']}")],
+            [P(f"Función: {r['funcion']}"), P(f"Grado: {r['grado_estudios']}"), P(f"Titulado: {r['titulado']}")],
+            [P(f"Clave presup.: {r['clave_presupuestal']}"), P(f"Estatus: {r['estatus_membresia']}"), P(f"Nombramiento: {r['nombramiento']}")],
+            [P(f"Domicilio: {r['domicilio']} {r['numero'] or ''}"), P(f"Colonia: {r['colonia']}"), P(f"Municipio: {r['municipio']}")],
+            [P(f"CP: {r['cp']}"), P(f"Tel1: {r['tel1']}"), P(f"Tel2: {r['tel2']}")],
+            [P(f"Correo: {r['correo_electronico']}"), P(""), P("")],
+            [P(f"F. ingreso: {r['fecha_ingreso']}"), P(f"F. baja/jub: {r['fecha_baja_jubilacion']}"), P("")],
+        ]
+
+        card = Table(filas, colWidths=[col_w, col_w, col_w], hAlign="LEFT")
+        card.setStyle(TableStyle([
+            ("GRID", (0,0), (-1,-1), 0.25, colors.lightgrey),
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ("LEFTPADDING", (0,0), (-1,-1), 4),
+            ("RIGHTPADDING", (0,0), (-1,-1), 4),
+            ("TOPPADDING", (0,0), (-1,-1), 2),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+        ]))
+
+        story.append(KeepTogether([head, card]))
+        story.append(Spacer(1, 10))
+
+    # Construir PDF
+    doc.build(story)
+    pdf = buf.getvalue()
+    buf.close()
+
+    filename = f"personal_{data['plantel']['cct']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    return send_file(BytesIO(pdf), as_attachment=True, download_name=filename, mimetype="application/pdf")
+
+@personal_bp.route("/personal/<int:persona_id>/ficha/pdf")
+@login_required
+def ficha_persona_pdf(persona_id):
+    d = _fetch_ficha_persona(persona_id)
+    p = d["persona"]
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=landscape(letter),
+        leftMargin=20, rightMargin=20, topMargin=22, bottomMargin=22
+    )
+
+    styles = getSampleStyleSheet()
+    small = ParagraphStyle("small", parent=styles["Normal"], fontName="Helvetica", fontSize=8.5, leading=10.2, wordWrap="CJK")
+    small_bold = ParagraphStyle("small_bold", parent=small, fontName="Helvetica-Bold")
+    title = ParagraphStyle("title", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=18, leading=22)
+
+    def P(txt, bold=False):
+        return Paragraph("" if txt is None else str(txt), small_bold if bold else small)
+
+    story = []
+    # Encabezado
+    story.append(Paragraph("<b>FICHA INDIVIDUAL DE PERSONAL</b>", title))
+    story.append(P(f"Delegación: {d['delegacion']} — {d['nivel']}  |  Plantel: {d['plantel']['nombre']} ({d['plantel']['cct']})"))
+    story.append(P(f"Generado por: {d['generado_por']}  |  Fecha: {d['generado_en']}"))
+    story.append(Spacer(1, 8))
+
+    # Cabecera con nombre grande
+    nombre = f"{p.apellido_paterno or ''} {p.apellido_materno or ''} {p.nombre or ''}".strip()
+    head = Table([[P(nombre, True)]], colWidths=[doc.width], hAlign="LEFT")
+    head.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#F0F0F0")),
+        ("BOX", (0,0), (-1,-1), 0.5, colors.black),
+        ("LEFTPADDING", (0,0), (-1,-1), 6),
+        ("RIGHTPADDING", (0,0), (-1,-1), 6),
+        ("TOPPADDING", (0,0), (-1,-1), 4),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+    ]))
+    story.append(head)
+    story.append(Spacer(1, 6))
+
+    # Info básica en filas (3 columnas)
+    col_w = doc.width / 3.0
+    filas = [
+        [P(f"Género: {p.genero or ''}"), P(f"RFC: {p.rfc or ''}"), P(f"CURP: {p.curp or ''}")],
+        [P(f"Clave presup.: {p.clave_presupuestal or ''}"), P(f"Estatus: {p.estatus_membresia or ''}"), P(f"Nombramiento: {p.nombramiento or ''}")],
+        [P(f"Función: {p.funcion or ''}"), P(f"Grado: {p.grado_estudios or ''}"), P(f"Titulado: {p.titulado or ''}")],
+        [P(f"Domicilio: {p.domicilio or ''} {p.numero or ''}"), P(f"Colonia: {p.colonia or ''}"), P(f"Municipio: {p.municipio or ''}")],
+        [P(f"CP: {p.cp or ''}"), P(f"Tel1: {p.tel1 or ''}"), P(f"Tel2: {p.tel2 or ''}")],
+        [P(f"Correo: {p.correo_electronico or ''}"), P(""), P("")],
+        [P(f"F. ingreso: {p.fecha_ingreso or ''}"), P(f"F. baja/jub: {p.fecha_baja_jubilacion or ''}"), P("")],
+    ]
+    card = Table(filas, colWidths=[col_w, col_w, col_w], hAlign="LEFT")
+    card.setStyle(TableStyle([
+        ("GRID", (0,0), (-1,-1), 0.25, colors.lightgrey),
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("LEFTPADDING", (0,0), (-1,-1), 4),
+        ("RIGHTPADDING", (0,0), (-1,-1), 4),
+        ("TOPPADDING", (0,0), (-1,-1), 2),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+    ]))
+    story.append(card)
+    story.append(Spacer(1, 10))
+
+    # Observaciones
+    story.append(Paragraph("<b>Observaciones</b>", small_bold))
+    story.append(Paragraph("<b>Observaciones</b>", small_bold))
+    if d["observaciones"]:
+        obs_rows = [[P("Fecha", True), P("Usuario", True), P("Texto", True)]]
+        for o in d["observaciones"]:
+            fecha = o.fecha.strftime("%Y-%m-%d %H:%M")
+            usuario = _nombre_usuario_por_id(getattr(o, "usuario_id", None))
+            obs_rows.append([P(fecha), P(usuario), P(o.texto or "")])
+        obs_tbl = Table(obs_rows, colWidths=[3.0*cm, 5.0*cm, doc.width - 8.0*cm], hAlign="LEFT")
+        obs_tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#ECECEC")),
+            ("GRID", (0,0), (-1,-1), 0.25, colors.grey),
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ]))
+        story.append(obs_tbl)
+    else:
+        story.append(P("Sin observaciones registradas."))
+    story.append(Spacer(1, 10))
+
+    # Historial de cambios
+    story.append(Paragraph("<b>Historial de movimientos</b>", small_bold))
+    if d["historial"]:
+        hist_rows = [[P("Fecha", True), P("Campo", True), P("Antes", True), P("Después", True), P("Usuario", True), P("Tipo", True)]]
+        for h in d["historial"]:
+            hist_rows.append([
+                P(h.fecha.strftime("%Y-%m-%d %H:%M")),
+                P(h.campo or ""),
+                P(h.valor_anterior or ""),
+                P(h.valor_nuevo or ""),
+                P(h.usuario or ""),
+                P(h.tipo or "")
+            ])
+        # ancho de columnas equilibrado
+        cw = [3.2*cm, 3.0*cm, (doc.width-3.2*cm-3.0*cm-3.0*cm-3.0*cm)/2, (doc.width-3.2*cm-3.0*cm-3.0*cm-3.0*cm)/2, 3.0*cm, 3.0*cm]
+        hist_tbl = Table(hist_rows, colWidths=cw, hAlign="LEFT", repeatRows=1)
+        hist_tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#ECECEC")),
+            ("GRID", (0,0), (-1,-1), 0.25, colors.grey),
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ]))
+        story.append(hist_tbl)
+    else:
+        story.append(P("Sin movimientos en el historial."))
+
+    doc.build(story)
+    pdf = buf.getvalue(); buf.close()
+    filename = f"ficha_{p.apellido_paterno or ''}_{p.apellido_materno or ''}_{p.nombre or ''}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    return send_file(BytesIO(pdf), as_attachment=True, download_name=filename, mimetype="application/pdf")
+
+
+@personal_bp.route("/personal/<int:persona_id>/ficha/excel")
+@login_required
+def ficha_persona_excel(persona_id):
+    d = _fetch_ficha_persona(persona_id)
+    p = d["persona"]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Ficha"
+
+    bold = Font(bold=True)
+    header_fill = PatternFill(start_color="ECECEC", end_color="ECECEC", fill_type="solid")
+    center = Alignment(horizontal="center", vertical="center")
+    thin = Side(style="thin", color="AAAAAA")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def set_row(key, value):
+        r = ws.max_row + 1
+        ws.cell(r, 1, key).font = bold
+        ws.cell(r, 1).fill = header_fill
+        ws.cell(r, 2, value)
+        ws.cell(r, 1).border = border
+        ws.cell(r, 2).border = border
+
+    ws.merge_cells("A1:B1"); ws["A1"] = "FICHA INDIVIDUAL DE PERSONAL"; ws["A1"].font = Font(size=14, bold=True); ws["A1"].alignment = center
+    set_row("Delegación", f"{d['delegacion']} — {d['nivel']}")
+    set_row("Plantel", f"{d['plantel']['nombre']} ({d['plantel']['cct']})")
+    set_row("Generado por", d["generado_por"])
+    set_row("Fecha", d["generado_en"])
+    ws.append([])
+
+    nombre = f"{p.apellido_paterno or ''} {p.apellido_materno or ''} {p.nombre or ''}".strip()
+    set_row("Nombre", nombre)
+    set_row("Género", p.genero or "")
+    set_row("RFC", p.rfc or "")
+    set_row("CURP", p.curp or "")
+    set_row("Clave presupuestal", p.clave_presupuestal or "")
+    set_row("Función", p.funcion or "")
+    set_row("Grado", p.grado_estudios or "")
+    set_row("Titulado", p.titulado or "")
+    set_row("Estatus", p.estatus_membresia or "")
+    set_row("Nombramiento", p.nombramiento or "")
+    set_row("Domicilio", f"{p.domicilio or ''} {p.numero or ''}")
+    set_row("Colonia", p.colonia or "")
+    set_row("Municipio", p.municipio or "")
+    set_row("CP", p.cp or "")
+    set_row("Tel1", p.tel1 or "")
+    set_row("Tel2", p.tel2 or "")
+    set_row("Correo", p.correo_electronico or "")
+    set_row("Fecha ingreso", p.fecha_ingreso or "")
+    set_row("Fecha baja/jub", p.fecha_baja_jubilacion or "")
+    ws.append([])
+
+    # Observaciones
+    r0 = ws.max_row + 1
+    ws.merge_cells(start_row=r0, start_column=1, end_row=r0, end_column=2)
+    ws.cell(r0,1,"Observaciones").font = Font(bold=True); ws.cell(r0,1).fill = header_fill
+    if d["observaciones"]:
+        ws.append(["Fecha", "Usuario", "Texto"])
+        for cell in ws[ws.max_row]:
+            cell.font = bold; cell.fill = header_fill; cell.border = border
+        for o in d["observaciones"]:
+            ws.append([
+                o.fecha.strftime("%Y-%m-%d %H:%M"),
+                _nombre_usuario_por_id(getattr(o, "usuario_id", None)),
+                o.texto or ""
+            ])
+            for cell in ws[ws.max_row]:
+                cell.border = border
+    else:
+        ws.append(["", "Sin observaciones registradas."])
+
+
+    ws.append([])
+    # Historial
+    r0 = ws.max_row + 1
+    ws.merge_cells(start_row=r0, start_column=1, end_row=r0, end_column=2)
+    ws.cell(r0,1,"Historial de movimientos").font = Font(bold=True); ws.cell(r0,1).fill = header_fill
+    if d["historial"]:
+        ws.append(["Fecha", "Campo", "Antes", "Después", "Usuario", "Tipo"])
+        for cell in ws[ws.max_row]:
+            cell.font = bold; cell.fill = header_fill; cell.border = border
+        for h in d["historial"]:
+            ws.append([
+                h.fecha.strftime("%Y-%m-%d %H:%M"),
+                h.campo or "", h.valor_anterior or "", h.valor_nuevo or "",
+                h.usuario or "", h.tipo or ""
+            ])
+            for cell in ws[ws.max_row]:
+                cell.border = border
+    else:
+        ws.append(["", "Sin movimientos en el historial."])
+
+    # Anchos
+    ws.column_dimensions["A"].width = 24
+    ws.column_dimensions["B"].width = 80
+    for col in ["C","D","E","F"]:
+        ws.column_dimensions[col].width = 30
+
+    out = BytesIO(); wb.save(out); out.seek(0)
+    filename = f"ficha_{p.apellido_paterno or ''}_{p.apellido_materno or ''}_{p.nombre or ''}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return send_file(out, as_attachment=True, download_name=filename,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
