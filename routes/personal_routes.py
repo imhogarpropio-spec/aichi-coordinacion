@@ -163,6 +163,7 @@ def _fetch_personal_detalle_por_cct(cct: str):
     }
     return data
 
+
 @personal_bp.route("/busqueda_personal", methods=["GET", "POST"])
 @login_required
 def busqueda_personal():
@@ -171,9 +172,11 @@ def busqueda_personal():
         filtros = {
             'apellido_paterno': request.form.get('apellido_paterno', '').strip(),
             'apellido_materno': request.form.get('apellido_materno', '').strip(),
-            'nombre': request.form.get('nombre', '').strip(),
-            'curp': request.form.get('curp', '').strip(),
-            'rfc': request.form.get('rfc', '').strip()
+            'nombre':            request.form.get('nombre', '').strip(),
+            'curp':              request.form.get('curp', '').strip(),
+            'rfc':               request.form.get('rfc', '').strip(),
+            'domicilio':         request.form.get('domicilio', '').strip(),
+            'colonia':           request.form.get('colonia', '').strip(),
         }
 
         consulta = Personal.query

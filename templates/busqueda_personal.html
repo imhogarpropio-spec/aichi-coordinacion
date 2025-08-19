@@ -12,20 +12,36 @@
 
   <form method="POST" class="row g-2 mb-4">
     <div class="col-md-3">
-      <input type="text" name="apellido_paterno" class="form-control" placeholder="Apellido paterno">
+      <input type="text" name="apellido_paterno" class="form-control" placeholder="Apellido paterno"
+             value="{{ request.form.get('apellido_paterno','') }}">
     </div>
     <div class="col-md-3">
-      <input type="text" name="apellido_materno" class="form-control" placeholder="Apellido materno">
+      <input type="text" name="apellido_materno" class="form-control" placeholder="Apellido materno"
+             value="{{ request.form.get('apellido_materno','') }}">
     </div>
     <div class="col-md-3">
-      <input type="text" name="nombre" class="form-control" placeholder="Nombre(s)">
+      <input type="text" name="nombre" class="form-control" placeholder="Nombre(s)"
+             value="{{ request.form.get('nombre','') }}">
     </div>
     <div class="col-md-3">
-      <input type="text" name="curp" class="form-control" placeholder="CURP">
+      <input type="text" name="curp" class="form-control" placeholder="CURP"
+             value="{{ request.form.get('curp','') }}">
     </div>
     <div class="col-md-3">
-      <input type="text" name="rfc" class="form-control" placeholder="RFC">
+      <input type="text" name="rfc" class="form-control" placeholder="RFC"
+             value="{{ request.form.get('rfc','') }}">
     </div>
+
+    <div class="col-md-3">
+      <input type="text" name="domicilio" class="form-control" placeholder="Domicilio"
+            value="{{ request.form.get('domicilio','') }}">
+    </div>
+    
+    <div class="col-md-3">
+      <input type="text" name="colonia" class="form-control" placeholder="Colonia"
+             value="{{ request.form.get('colonia','') }}">
+    </div>
+
     <div class="col-md-3">
       <button type="submit" class="btn btn-primary w-100">🔍 Buscar</button>
     </div>
@@ -41,6 +57,7 @@
           <th>RFC</th>
           <th>CCT</th>
           <th>Delegación</th>
+          <th>Colonia</th>  <!-- 👈 opcional, útil para validar la búsqueda -->
           <th>Ficha</th>
         </tr>
       </thead>
@@ -51,9 +68,14 @@
           <td>{{ persona.curp }}</td>
           <td>{{ persona.rfc }}</td>
           <td>{{ persona.cct }}</td>
-          <td>{{ persona.plantel.delegacion.nombre }}</td>
           <td>
-            <a href="{{ url_for('personal_bp.vista_detalle_personal', id=persona.id) }}" class="btn btn-outline-secondary btn-sm">📄 Ver ficha</a>
+            {{ persona.plantel.delegacion.nombre
+               if persona.plantel and persona.plantel.delegacion else '' }}
+          </td>
+          <td>{{ persona.colonia or '' }}</td>
+          <td>
+            <a href="{{ url_for('personal_bp.vista_detalle_personal', id=persona.id) }}"
+               class="btn btn-outline-secondary btn-sm">📄 Ver ficha</a>
           </td>
         </tr>
         {% endfor %}
