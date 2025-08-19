@@ -1093,3 +1093,29 @@ def reporte_personal_pdf():
     filename = f"personal_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
     return send_file(BytesIO(pdf), as_attachment=True, download_name=filename, mimetype="application/pdf")
 
+@delegaciones_bp.route('/agregar_delegacion', methods=['POST'])
+@roles_required('admin', 'coordinador')
+@login_required
+def agregar_delegacion():
+    nombre   = (request.form.get('nombre') or '').strip()
+    nivel    = (request.form.get('nivel') or '').strip()   # libre
+    delegado = (request.form.get('delegado') or '').strip()
+
+    if not nombre or not nivel:
+        flash('Nombre y nivel son obligatorios.', 'warning')
+        return redirect(url_for('delegaciones_bp.vista_delegaciones'))
+
+    try:
+        nueva = Delegacion(nombre=nombre, nivel=nivel, delegado=delegado or None)
+        db.session.add(nueva)
+        db.session.commit()
+        registrar_notificacion(
+            f"{current_user.nombre} creó la delegación '{nombre}' (nivel {nivel})",
+            tipo="delegacion"
+        )
+        flash('Delegación creada correctamente.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'No se pudo crear la delegación: {e}', 'danger')
+
+    return redirect(url_for('delegaciones_bp.vista_delegaciones'))
