@@ -1,0 +1,439 @@
+{% extends 'base.html' %}
+{% block title %}Tabla editable de personal - {{ delegacion.nombre }}{% endblock %}
+{% block content %}
+
+<a href="{{ url_for('delegaciones_bp.vista_ccts_por_delegacion', delegacion_id=delegacion.id) }}"
+   class="btn btn-secondary mb-3">
+  ⬅️ Regresar
+</a>
+
+<h4 class="mb-3">Personal de {{ delegacion.nombre }}</h4>
+<p class="text-muted mb-2">Edita en línea y guarda cambios. Los filtros y el ordenado son por columna.</p>
+
+<div class="d-flex gap-2 mb-2">
+  <button id="btn-guardar" class="btn btn-success">💾 Guardar cambios</button>
+  <button id="btn-recargar" class="btn btn-outline-secondary">↻ Recargar</button>
+  <button id="btn-excel"   class="btn btn-outline-primary">⬇️ Excel (todo)</button>
+</div>
+
+<!-- 🔷 Encabezado de resumen (H/M/T y por función) -->
+<div id="resumen-personal" class="mb-3">
+  <div class="card">
+    <div class="card-body py-2">
+      <div id="resumen-totales" class="d-flex flex-wrap align-items-center gap-3"></div>
+      <div id="resumen-funciones" class="mt-2"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Tabla con data-* para pasar variables desde Jinja -->
+<div id="tabla-personal"
+     data-delegacion-id="{{ delegacion.id }}"
+     data-puede-editar="{{ 'true' if can_edit else 'false' }}"
+     data-ajax-list-url="{{ url_for('delegaciones_bp.api_listar_personal', delegacion_id=delegacion.id) }}"
+     data-ajax-save-url="{{ url_for('delegaciones_bp.api_guardar_personal_bulk', delegacion_id=delegacion.id) }}"
+     data-ajax-export-url="{{ url_for('delegaciones_bp.api_exportar_personal_excel', delegacion_id=delegacion.id) }}"
+     data-ajax-summary-url="{{ url_for('delegaciones_bp.api_resumen_personal', delegacion_id=delegacion.id) }}"
+     data-baja-url-tpl="{{ url_for('personal_bp.solicitar_baja', id=0) }}"
+     data-observ-url-tpl="{{ url_for('personal_bp.agregar_observacion', personal_id=0) }}">
+</div>
+
+<!-- 🔶 Modal Solicitar Baja (desde tabla editable) -->
+<div class="modal fade" id="modal-baja-tabla" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="form-baja-tabla">
+        <div class="modal-header bg-warning">
+          <h5 class="modal-title">Solicitar baja</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="small text-muted mb-2">
+            Trabajador: <span id="info-trabajador"></span>
+          </p>
+          <label class="form-label">Motivo de la baja <span class="text-danger">*</span></label>
+          <textarea id="motivoBajaTabla" class="form-control" rows="4" required></textarea>
+          <input type="hidden" id="personaIdBaja">
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-warning">Confirmar baja</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- 🔷 Modal Agregar Observación (idéntico al de Detalle) -->
+<div class="modal fade" id="modal-obs-tabla" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="form-obs-tabla">
+        <div class="modal-header bg-info">
+          <h5 class="modal-title text-white">Agregar observación</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="small text-muted mb-2">
+            Trabajador: <span id="info-trabajador-obs"></span>
+          </p>
+          <label class="form-label">Observación <span class="text-danger">*</span></label>
+          <textarea id="textoObsTabla" class="form-control" rows="4" required></textarea>
+          <input type="hidden" id="personaIdObs">
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-info text-white">Guardar observación</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Tabulator (CSS + JS) -->
+<link href="https://unpkg.com/tabulator-tables@5.5.2/dist/css/tabulator.min.css" rel="stylesheet">
+<script src="https://unpkg.com/tabulator-tables@5.5.2/dist/js/tabulator.min.js"></script>
+
+<!-- 🎨 Estilos -->
+<style>
+  :root{
+    --snte-orange: #ff7a00;
+    --coord-border: #6d6d6d;
+  }
+  .tabulator .tabulator-cell.col-funcion-coord{
+    background: var(--snte-orange);
+    color: #fff;
+    font-weight: 600;
+    box-shadow: inset 0 0 0 1px var(--coord-border);
+  }
+  .tabulator .tabulator-row.tabulator-selected .tabulator-cell.col-funcion-coord{
+    background: var(--snte-orange) !important;
+    color: #fff !important;
+    box-shadow: inset 0 0 0 1px var(--coord-border) !important;
+  }
+  .tabulator .tabulator-col[tabulator-field="funcion_coordinacion"],
+  .tabulator .tabulator-col[col-field="funcion_coordinacion"]{
+    background: var(--snte-orange) !important;
+    color: #fff !important;
+    box-shadow: inset 0 -1px 0 var(--coord-border),
+                inset 1px 0 0 var(--coord-border),
+                inset -1px 0 0 var(--coord-border),
+                inset 0 1px 0 var(--coord-border);
+  }
+  .tabulator .tabulator-col[tabulator-field="funcion_coordinacion"] .tabulator-col-title,
+  .tabulator .tabulator-col[col-field="funcion_coordinacion"] .tabulator-col-title{ font-weight:700; color:#fff!important;}
+  .tabulator .tabulator-col[tabulator-field="funcion_coordinacion"] .tabulator-header-filter input,
+  .tabulator .tabulator-col[col-field="funcion_coordinacion"] .tabulator-header-filter input,
+  .tabulator .tabulator-col[tabulator-field="funcion_coordinacion"] .tabulator-header-filter select,
+  .tabulator .tabulator-col[col-field="funcion_coordinacion"] .tabulator-header-filter select{
+    background: rgba(255,255,255,0.15); color:#fff; border-color: rgba(255,255,255,0.7);
+  }
+  .tabulator .tabulator-row.row-baja-solicitada .tabulator-cell{ background:#fff3cd !important; }
+  .tabulator .tabulator-row.row-baja-solicitada{ box-shadow: inset 4px 0 0 #ffc107 !important; }
+  .tabulator-menu{ z-index:1080 !important; }
+</style>
+
+<script>
+  const root = document.getElementById("tabla-personal");
+  const puedeEditar      = root.dataset.puedeEditar === "true";
+  const AJAX_LIST_URL    = root.dataset.ajaxListUrl;
+  const AJAX_SAVE_URL    = root.dataset.ajaxSaveUrl;
+  const AJAX_EXPORT_URL  = root.dataset.ajaxExportUrl;
+  const AJAX_SUMMARY_URL = root.dataset.ajaxSummaryUrl;
+  const BAJA_URL_TPL     = root.dataset.bajaUrlTpl;    // "/personal/solicitar_baja/0"
+  const OBS_URL_TPL      = root.dataset.observUrlTpl;  // "/personal/agregar_observacion/0"
+
+  const FUNC_COORD_OPCIONES = [
+    "DIRECTOR (A)","DOCENTE","ADMINISTRATIVO (A)","PREFECTO (A)","INTENDENCIA"
+  ];
+
+  const bajaSolicitadaIds = new Set();
+
+  function marcarFilaBajaSolicitada(row){
+    try{
+      const data = row.getData();
+      if (data && data.id != null){
+        bajaSolicitadaIds.add(Number(data.id));
+        row.getElement().classList.add("row-baja-solicitada");
+      }
+    }catch(e){ console.warn("No se pudo marcar la fila:", e); }
+  }
+
+  function makeBajaUrl(personaId){ return BAJA_URL_TPL.replace(/\/0(\/)?$/, `/${personaId}$1`); }
+  function makeObsUrl(personaId){  return OBS_URL_TPL.replace(/\/0(\/)?$/, `/${personaId}$1`); }
+
+  const EXCEL_TITLES = {
+    num:"NUM", apellido_paterno:"PATERNO", apellido_materno:"MATERNO", nombre:"NOMBRE",
+    genero:"GENERO", rfc:"RFC", curp:"CURP", clave_presupuestal:"CLAVE_PRESUPUESTAL",
+    funcion:"FUNCION", funcion_coordinacion:"FUNCION_COORDINACION", grado_estudios:"GRADO_MAXIMO_ESTUDIOS",
+    titulado:"TITULADO", fecha_ingreso:"FECHA_INGRESO", fecha_baja_jubilacion:"FCH_BAJ_JUB",
+    estatus_membresia:"STATUS_MEMB", nombramiento:"NOMBRAMIENTO", domicilio:"DP_CALLE",
+    numero:"DP_NUM_EXT", dp_num_int:"DP_NUM_INT", dp_cruce1:"DP_CRUCE1", dp_cruce2:"DP_CRUCE2",
+    localidad:"DP_LOCALIDAD", colonia:"DP_COLONIA", municipio:"DP_MUN_NOM", cp:"DP_CP",
+    tel1:"DP_TEL1", tel2:"DP_TEL2", correo_electronico:"CORREO_ELECTRONICO",
+    escuela_nombre:"ESCUELA_NOMBRE", cct:"CCT", turno:"TURNO", nivel:"NIVEL",
+    subs_modalidad:"SUBS_MODALIDAD", zona_escolar:"ZONA_ESCOLAR", sector:"SECTOR",
+    dom_esc_calle:"DOM_ESC_CALLE", dom_esc_num_ext:"DOM_ESC_NUM_EXT", dom_esc_num_int:"DOM_ESC_NUM_INT",
+    dom_esc_cruce1:"DOM_ESC_CRUCE1", dom_esc_cruce2:"DOM_ESC_CRUCE2",
+    dom_esc_localidad:"DOM_ESC_LOCALIDAD", dom_esc_colonia:"DOM_ESC_COLONIA",
+    dom_esc_mun_nom:"DOM_ESC_MUN_NOM", dom_esc_cp:"DOM_ESC_CP", dom_esc_coordenadas_gps:"DOM_ESC_COORDENADAS GPS",
+    estado:"ESTADO", seccion_snte:"SECCION_SNTE", del_o_ct:"DEL_O_CT", org:"ORG", coord_reg:"COORD_REG", fun_sin:"FUN_SIN",
+    updated_at:"UPDATED_AT", id:"ID"
+  };
+
+  const DISPLAY_ORDER = [
+    "apellido_paterno","apellido_materno","nombre","genero","rfc","curp",
+    "clave_presupuestal","funcion_coordinacion","funcion","grado_estudios","titulado",
+    "fecha_ingreso","fecha_baja_jubilacion","estatus_membresia","nombramiento",
+    "domicilio","numero","dp_num_int","dp_cruce1","dp_cruce2",
+    "localidad","colonia","municipio","cp","tel1","tel2","correo_electronico",
+    "escuela_nombre","cct","turno","nivel","subs_modalidad","zona_escolar","sector",
+    "dom_esc_calle","dom_esc_num_ext","dom_esc_num_int","dom_esc_cruce1","dom_esc_cruce2",
+    "dom_esc_localidad","dom_esc_colonia","dom_esc_mun_nom","dom_esc_cp","dom_esc_coordenadas_gps",
+    "estado","seccion_snte","del_o_ct","org","coord_reg","fun_sin","updated_at","id"
+  ];
+
+  const HIDE_FIELDS = new Set(["num"]);
+  const dirtyIds = new Set();
+  let columnasConstruidas = false;
+  const niceTitle = (key) => EXCEL_TITLES[key] || key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const isDateKey = (k) => /^fecha_/.test(k) || k.endsWith("_at");
+
+  function buildColumns(sample){
+    const sampleKeys = Object.keys(sample || {});
+    const ordered = [];
+    const seen = new Set();
+    for (const k of DISPLAY_ORDER){ if (sampleKeys.includes(k) && !HIDE_FIELDS.has(k)) { ordered.push(k); seen.add(k); } }
+    for (const k of sampleKeys){ if (!seen.has(k) && !HIDE_FIELDS.has(k)) ordered.push(k); }
+
+    const cols = ordered.map(key => {
+      const col = { title: niceTitle(key), field: key, headerFilter:"input", editor: puedeEditar ? "input" : false, minWidth:120 };
+      if (key === "id") col.visible = false;
+      if (key === "genero"){ col.editor = puedeEditar ? "select" : false; col.editorParams = { values:{H:"H", M:"M"} }; col.width = 120; }
+      if (key === "estatus_membresia"){
+        col.editor = puedeEditar ? "select" : false;
+        col.editorParams = { "ACTIVO":"ACTIVO", "BAJA":"BAJA", "COMISIÓN":"COMISIÓN", "OTRO":"OTRO", "BAJA EN PROCESO":"BAJA EN PROCESO" };
+        col.width = 200;
+      }
+      if (isDateKey(key)){ col.sorter="datetime"; col.hozAlign="center"; }
+      if (key === "funcion_coordinacion"){
+        col.cssClass = "col-funcion-coord";
+        col.editor   = puedeEditar ? "select" : false;
+        col.editorParams = { values: FUNC_COORD_OPCIONES };
+        col.headerFilter = "list";
+        col.headerFilterParams = { values: ["", ...FUNC_COORD_OPCIONES] };
+        col.width = 220;
+      }
+      return col;
+    });
+
+    cols.unshift({ title:"#", formatter:"rownum", width:60, hozAlign:"center", headerSort:false, headerFilter:false });
+    return cols;
+  }
+
+  const table = new Tabulator("#tabla-personal", {
+    ajaxURL: AJAX_LIST_URL,
+    ajaxParams: { excluir_baja_en_proceso: 1 },
+    height:"70vh",
+    layout:"fitDataStretch",
+    columns: [],
+    ajaxSorting: true,
+    ajaxFiltering: true,
+    pagination: "remote",
+    paginationSize: 25,
+    placeholder: "Sin registros",
+    selectable: 1,
+    index: "id",
+    columnDefaults: { headerHozAlign:"left", resizable: true },
+    persistence: { columns:true, sort:true, filter:true },
+    persistenceID: "tabla-personal-v6-{{ delegacion.id }}",
+
+    rowContextMenu: [
+      {
+        label: "➖ Solicitar baja",
+        action: (e, row) => {
+          const d = row.getData();
+          const status = (d.estatus_membresia || "").toUpperCase();
+          if (status === "BAJA"){ alert("La persona ya está en BAJA."); return; }
+          if (status === "BAJA EN PROCESO"){ alert("La persona ya tiene una baja en proceso."); return; }
+          abrirModalBaja(d, row);
+        }
+      },
+      {
+        label: "📝 Agregar observación",
+        action: (e, row) => { abrirModalObs(row.getData(), row); }
+      }
+    ],
+
+    ajaxResponse(url, params, response){
+      if (!columnasConstruidas && response && Array.isArray(response.data) && response.data.length){
+        const cols = buildColumns(response.data[0]);
+        this.setColumns(cols);
+        columnasConstruidas = true;
+        this.redraw(true);
+      }
+      this.setMaxPage(Math.ceil(response.total / this.getPageSize()));
+      return response.data;
+    },
+
+    ajaxError(url, params, xhr){
+      const msg = `AJAX ${xhr.status} ${xhr.statusText}\n` + (xhr.responseText ? xhr.responseText.slice(0, 500) : '');
+      console.error(msg); alert(msg);
+    },
+
+    cellEdited(cell){
+      const row = cell.getRow(); const id = row.getData().id;
+      if (id != null){ dirtyIds.add(id); row.getElement().style.backgroundColor = "rgba(255,193,7,.15)"; }
+    },
+
+    rowFormatter(row){
+      const data = row.getData(); const id = data.id;
+      row.getElement().style.backgroundColor = dirtyIds.has(id) ? "rgba(255,193,7,.15)" : "";
+      const status = (data.estatus_membresia || "").toUpperCase();
+      if (status === "BAJA EN PROCESO" || bajaSolicitadaIds.has(Number(id))){
+        row.getElement().classList.add("row-baja-solicitada");
+      }else{
+        row.getElement().classList.remove("row-baja-solicitada");
+      }
+    }
+  });
+
+  // ====== RESUMEN ======
+  async function cargarResumen(){
+    try{
+      const url = new URL(AJAX_SUMMARY_URL, window.location.origin);
+      url.searchParams.set("excluir_baja_en_proceso","1");
+      const resp = await fetch(url);
+      if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      renderResumen(await resp.json());
+    }catch(err){
+      console.error("Error cargando resumen:", err);
+      document.getElementById("resumen-totales").innerHTML = "";
+      document.getElementById("resumen-funciones").innerHTML = "";
+    }
+  }
+
+  function renderResumen(data){
+    const totalesEl = document.getElementById("resumen-totales");
+    const funcionesEl = document.getElementById("resumen-funciones");
+    if(!data || !data.totales){ totalesEl.innerHTML=""; funcionesEl.innerHTML=""; return; }
+    const {hombres, mujeres, total} = data.totales;
+    totalesEl.innerHTML = `
+      <span class="badge text-bg-primary px-3 py-2">Hombres: <strong>${hombres||0}</strong></span>
+      <span class="badge text-bg-danger  px-3 py-2">Mujeres: <strong>${mujeres||0}</strong></span>
+      <span class="badge text-bg-secondary px-3 py-2">Total: <strong>${total||0}</strong></span>`;
+    const rows = (data.funciones || []).map(f => `
+      <div class="col-12 col-sm-6 col-md-4 col-xl-3">
+        <div class="border rounded p-2 h-100">
+          <div class="fw-semibold mb-1" style="font-size:.95rem;">${f.funcion}</div>
+          <div class="d-flex gap-2 small">
+            <span class="badge text-bg-primary">H: ${f.hombres||0}</span>
+            <span class="badge text-bg-danger">M: ${f.mujeres||0}</span>
+            <span class="badge text-bg-secondary">T: ${f.total||0}</span>
+          </div>
+        </div>
+      </div>`);
+    funcionesEl.innerHTML = `<div class="row g-2">${rows.join("")}</div>`;
+  }
+  cargarResumen();
+
+  document.getElementById("btn-recargar").addEventListener("click", () => {
+    dirtyIds.clear(); table.clearHistory?.(); table.replaceData(); cargarResumen();
+  });
+
+  document.getElementById("btn-guardar").addEventListener("click", async () => {
+    try{
+      if (!puedeEditar) { alert("No tienes permisos para editar."); return; }
+      let rowsToSave = [];
+      if (typeof table.getEditedCells === "function") {
+        const editedCells = table.getEditedCells(); const byId = new Map();
+        for (const cell of editedCells) { const data = cell.getRow().getData(); byId.set(data.id, data); }
+        rowsToSave = Array.from(byId.values());
+      }
+      if ((!rowsToSave || rowsToSave.length === 0) && typeof table.getRows === "function") {
+        const rows = table.getRows();
+        rowsToSave = rows.filter(r => (typeof r.getUpdateHistory === "function") && (r.getUpdateHistory() || []).length > 0).map(r => r.getData());
+      }
+      if (!rowsToSave || rowsToSave.length === 0) { alert("No hay cambios por guardar."); return; }
+      rowsToSave = rowsToSave.map(r => { if (r && typeof r.id !== "number") r.id = Number(r.id); return r; });
+
+      const resp = await fetch(AJAX_SAVE_URL, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ rows: rowsToSave }) });
+      if (!resp.ok) { const txt = await resp.text(); throw new Error(`HTTP ${resp.status} - ${txt}`); }
+
+      const data = await resp.json();
+      alert(`Cambios guardados: ${data.actualizados} registro(s).`);
+      table.clearHistory?.(); dirtyIds.clear(); table.replaceData(); cargarResumen();
+    }catch(err){ console.error(err); alert(`Error al guardar:\n${err.message || err}`); }
+  });
+
+  document.getElementById("btn-excel").addEventListener("click", () => {
+    const url = new URL(AJAX_EXPORT_URL, window.location.origin);
+    const sorters = (typeof table.getSorters === "function") ? table.getSorters() : [];
+    sorters.forEach((s, i) => { url.searchParams.set(`sorter[${i}][field]`, s.field); url.searchParams.set(`sorter[${i}][dir]`, s.dir); });
+    const filters = (typeof table.getFilters === "function") ? table.getFilters() : [];
+    filters.forEach((f, i) => { url.searchParams.set(`filter[${i}][field]`, f.field); url.searchParams.set(`filter[${i}][value]`, f.value); });
+    url.searchParams.set("excluir_baja_en_proceso", "1");
+    window.location = url.toString();
+  });
+
+  // ========= Modal de BAJA =========
+  let selectedBajaRow = null; let selectedBajaData = null;
+  function abrirModalBaja(rowData, row){
+    selectedBajaRow = row; selectedBajaData = rowData;
+    document.getElementById("personaIdBaja").value = rowData.id;
+    document.getElementById("motivoBajaTabla").value = "";
+    document.getElementById("info-trabajador").innerText =
+      `${rowData.apellido_paterno || ""} ${rowData.apellido_materno || ""} ${rowData.nombre || ""}`.trim();
+    new bootstrap.Modal(document.getElementById("modal-baja-tabla")).show();
+  }
+  document.getElementById("form-baja-tabla").addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    const personaId = document.getElementById("personaIdBaja").value;
+    const motivoUsr = document.getElementById("motivoBajaTabla").value.trim();
+    if(!motivoUsr){ alert("⚠️ Debes escribir un motivo."); return; }
+    const motivoFinal = "Solicitada desde tabla editable — " + motivoUsr;
+    try{
+      const resp = await fetch(makeBajaUrl(personaId), {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+        body: new URLSearchParams({ "motivo_baja": motivoFinal }).toString()
+      });
+      if(!resp.ok){ const txt = await resp.text(); throw new Error(`HTTP ${resp.status} - ${txt.slice(0,300)}`); }
+      if (selectedBajaRow){ selectedBajaRow.update({ estatus_membresia: "BAJA EN PROCESO" }); marcarFilaBajaSolicitada(selectedBajaRow); }
+      alert("✅ Solicitud de baja registrada.");
+      bootstrap.Modal.getInstance(document.getElementById("modal-baja-tabla")).hide();
+    }catch(err){ console.error(err); alert("❌ Error al solicitar baja:\n" + (err.message || err)); }
+  });
+
+  // ========= Modal de OBSERVACIÓN =========
+  let selectedObsRow = null; let selectedObsData = null;
+  function abrirModalObs(rowData, row){
+    selectedObsRow = row; selectedObsData = rowData;
+    document.getElementById("personaIdObs").value = rowData.id;
+    document.getElementById("textoObsTabla").value = "";
+    document.getElementById("info-trabajador-obs").innerText =
+      `${rowData.apellido_paterno || ""} ${rowData.apellido_materno || ""} ${rowData.nombre || ""}`.trim();
+    new bootstrap.Modal(document.getElementById("modal-obs-tabla")).show();
+  }
+
+  document.getElementById("form-obs-tabla").addEventListener("submit", async (e)=>{
+    e.preventDefault();
+    const personaId = document.getElementById("personaIdObs").value;
+    const texto = document.getElementById("textoObsTabla").value.trim();
+    if(!texto){ alert("⚠️ Debes escribir una observación."); return; }
+
+    try{
+      const resp = await fetch(makeObsUrl(personaId), {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+        // ⬇️ El endpoint espera 'texto'; también enviamos 'observacion' por compatibilidad
+        body: new URLSearchParams({ texto: texto, observacion: texto }).toString()
+      });
+      if(!resp.ok){ const txt = await resp.text(); throw new Error(`HTTP ${resp.status} - ${txt.slice(0,300)}`); }
+      alert("✅ Observación guardada.");
+      bootstrap.Modal.getInstance(document.getElementById("modal-obs-tabla")).hide();
+    }catch(err){ console.error(err); alert("❌ Error al agregar observación:\n" + (err.message || err)); }
+  });
+</script>
+
+{% endblock %}

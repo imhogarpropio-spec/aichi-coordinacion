@@ -245,136 +245,273 @@ def eliminar_personal(id):
 @login_required
 def editar_personal(id):
     persona = Personal.query.get_or_404(id)
-    nuevo_curp = request.form.get("curp", "").strip().upper()
-    nuevo_rfc = request.form.get("rfc", "").strip().upper()
-    otro_con_curp = Personal.query.filter(Personal.curp == nuevo_curp, Personal.id != id).first()
-    if otro_con_curp:
-        flash(f"❌ CURP duplicado: ya pertenece a {otro_con_curp.nombre}", "danger")
-        return redirect(url_for("personal_bp.vista_detalle_personal", id=id))
-    otro_con_rfc = Personal.query.filter(Personal.rfc == nuevo_rfc, Personal.id != id).first()
-    if otro_con_rfc:
-        flash(f"❌ RFC duplicado: ya pertenece a {otro_con_rfc.nombre}", "danger")
-        return redirect(url_for("personal_bp.vista_detalle_personal", id=id))
 
-    campos = ["apellido_paterno", "apellido_materno", "nombre", "genero", "rfc", "curp",
-              "clave_presupuestal", "funcion", "grado_estudios", "titulado", "fecha_ingreso",
-              "fecha_baja_jubilacion", "estatus_membresia", "nombramiento", "domicilio", "numero",
-              "localidad", "colonia", "municipio", "cp", "tel1", "tel2", "correo_electronico"]
+    # ... (validaciones de CURP/RFC)
+
+    campos = {
+        "cct",  # <-- incluirlo
+        "apellido_paterno","apellido_materno","nombre","genero","rfc","curp",
+        "clave_presupuestal","funcion","grado_estudios","titulado",
+        "fecha_ingreso","fecha_baja_jubilacion","estatus_membresia","nombramiento",
+        "domicilio","numero","localidad","colonia","municipio","cp","tel1","tel2","correo_electronico",
+        "num","dp_num_int","dp_cruce1","dp_cruce2",
+        "escuela_nombre","turno","nivel","subs_modalidad","zona_escolar","sector",
+        "dom_esc_calle","dom_esc_num_ext","dom_esc_num_int","dom_esc_cruce1","dom_esc_cruce2",
+        "dom_esc_localidad","dom_esc_colonia","dom_esc_mun_nom","dom_esc_cp","dom_esc_coordenadas_gps",
+        "estado","seccion_snte","del_o_ct","org","coord_reg","fun_sin",
+    }
+
+    def parse_date(s):
+        if not s: return None
+        from datetime import datetime
+        try: return datetime.strptime(s, "%Y-%m-%d").date()
+        except ValueError: return None
+
+    cambios = 0
 
     for campo in campos:
-        valor_anterior = getattr(persona, campo)
-        valor_nuevo = request.form.get(campo)
-        if campo in ["curp"]: valor_nuevo = nuevo_curp
-        if campo in ["rfc"]: valor_nuevo = nuevo_rfc
-        if "fecha" in campo and valor_nuevo == "": valor_nuevo = None
-        if "fecha" in campo and valor_nuevo:
-            try:
-                valor_nuevo = datetime.strptime(valor_nuevo, "%Y-%m-%d").date()
-            except ValueError:
-                flash("Formato de fecha inválido.", "danger")
+        if campo not in request.form:
+            continue  # no tocar lo que no viene en el form
+
+        raw = request.form.get(campo)
+
+        if campo == "curp":
+            valor_nuevo = (raw or "").strip().upper()
+        elif campo == "rfc":
+            valor_nuevo = (raw or "").strip().upper()
+        elif campo in ("fecha_ingreso", "fecha_baja_jubilacion"):
+            valor_nuevo = parse_date(raw)
+            if raw and valor_nuevo is None:
+                flash("Formato de fecha inválido (AAAA-MM-DD).", "danger")
                 return redirect(url_for("personal_bp.vista_detalle_personal", id=persona.id))
-        if str(valor_anterior) != str(valor_nuevo):
-            registrar_historial("personal", campo, valor_anterior, valor_nuevo, persona.id, current_user.nombre, "edición")
-            setattr(persona, campo, valor_nuevo)
+        elif campo == "num":
+            s = (raw or "").strip()
+            valor_nuevo = int(s) if s.isdigit() else None
+        elif campo == "cct":
+            # 👉 si viene vacío, conservar el actual
+            valor_nuevo = (raw or persona.cct or "").strip()
+            # Si realmente cambió, validar la FK
+            if valor_nuevo != persona.cct:
+                if not Plantel.query.filter_by(cct=valor_nuevo).first():
+                    flash("El CCT indicado no existe en planteles.", "danger")
+                    return redirect(url_for("personal_bp.vista_detalle_personal", id=persona.id))
+        else:
+            valor_nuevo = (raw or "").strip()
+
+        if hasattr(persona, campo):
+            anterior = getattr(persona, campo, None)
+            if str(anterior) != str(valor_nuevo):
+                registrar_historial("personal", campo, anterior, valor_nuevo,
+                                    persona.id, current_user.nombre, "edición")
+                setattr(persona, campo, valor_nuevo)
+                cambios += 1
 
     db.session.commit()
     registrar_notificacion(
-        f"{current_user.nombre} actualizó datos de {persona.nombre} ({getattr(persona, 'curp', 'SIN CURP')})",
+        f"{current_user.nombre} actualizó datos de {persona.nombre} ({getattr(persona,'curp','SIN CURP')})",
         tipo="personal"
     )
-    flash("Cambios guardados correctamente.", "success")
+    flash(f"✅ Cambios guardados. ({cambios} campo(s) actualizado(s))", "success")
     return redirect(url_for("personal_bp.vista_detalle_personal", id=persona.id))
+
 
 @personal_bp.route('/subir_excel_personal/<cct>', methods=['POST'])
 @roles_required('admin')
 def subir_excel_personal(cct):
     plantel = Plantel.query.filter_by(cct=cct).first_or_404()
 
-    def convertir_fecha(valor):
-        try:
-            return pd.to_datetime(valor).date() if pd.notna(valor) else None
-        except Exception:
-            return None
+    file = request.files.get('archivo_excel')
+    if not file or file.filename == '':
+        flash('Sube un archivo .xlsx en el campo "archivo_excel".', 'danger')
+        return redirect(url_for('personal_bp.vista_personal',
+                                delegacion=plantel.delegacion.nombre, cct=cct))
 
-    def limpiar_entero(valor):
-        try:
-            if pd.isna(valor) or str(valor).strip() == '':
-                return None
-            return int(valor)
-        except:
-            return None
+    try:
+        import unicodedata, re
+        df = pd.read_excel(file, sheet_name=0, engine="openpyxl", dtype=str)
 
-    def limpiar_str(valor, max_len=None):
-        if pd.isna(valor):
-            return ''
-        valor = str(valor).strip()
-        return valor[:max_len] if max_len else valor
+        def norm(h):
+            h = "" if h is None else str(h).strip()
+            h = "".join(c for c in unicodedata.normalize("NFD", h) if unicodedata.category(c) != "Mn")
+            h = re.sub(r"[^A-Za-z0-9]+","_", h).strip("_").lower()
+            return h
 
-    if 'archivo_excel' not in request.files:
-        flash('No se envió ningún archivo.', 'danger')
-        return redirect(url_for('personal_bp.vista_personal', delegacion=plantel.delegacion, cct=cct))
+        original_cols = list(df.columns)
+        df.columns = [norm(c) for c in df.columns]
 
-    archivo = request.files['archivo_excel']
+        # --- Aceptar variantes de encabezados:
+        ALIASES = {
+            "fch_baj_jub": "fecha_baja_jubilacion",
+            "fecha_baja_por_jubilacion": "fecha_baja_jubilacion",
+            "grado_max_estudios": "grado_maximo_estudios",
+            "dom_esc_coords_gps": "dom_esc_coordenadas_gps",
+        }
+        df.rename(columns=ALIASES, inplace=True)
 
-    if archivo.filename == '':
-        flash('Nombre de archivo vacío.', 'danger')
-        return redirect(url_for('personal_bp.vista_personal', delegacion=plantel.delegacion, cct=cct))
+        # Debug útil para ver qué llegó
+        flash("Encabezados normalizados: " + ", ".join(list(df.columns)[:50]) + ("..." if len(df.columns) > 50 else ""), "info")
 
-    if archivo and archivo.filename.endswith('.xlsx'):
-        try:
-            df = pd.read_excel(archivo)
-            registros_agregados = 0
-            registros_ignorados = 0
+        # --- Mapeo Excel -> campos de tu tabla
+        MAP = {
+            # Identificación
+            "num": "num",
+            "paterno": "apellido_paterno",
+            "materno": "apellido_materno",
+            "nombre": "nombre",
+            "genero": "genero",
+            "rfc": "rfc",
+            "curp": "curp",
+            "clave_presupuestal": "clave_presupuestal",
+            "funcion": "funcion",
+            "grado_maximo_estudios": "grado_estudios",
+            "titulado": "titulado",
+            "fecha_ingreso": "fecha_ingreso",
+            "fecha_baja_jubilacion": "fecha_baja_jubilacion",
+            "status_memb": "estatus_membresia",
+            "nombramiento": "nombramiento",
 
-            for _, row in df.iterrows():
-                if not str(row.get('nombre', '')).strip():
-                    registros_ignorados += 1
+            # Dirección persona
+            "dp_calle": "domicilio",
+            "dp_num_ext": "numero",
+            "dp_num_int": "dp_num_int",
+            "dp_cruce1": "dp_cruce1",
+            "dp_cruce2": "dp_cruce2",
+            "dp_localidad": "localidad",
+            "dp_colonia": "colonia",
+            "dp_mun_nom": "municipio",
+            "dp_cp": "cp",
+            "dp_tel1": "tel1",
+            "dp_tel2": "tel2",
+            "correo_electronico": "correo_electronico",
+
+            # Escuela / sindical
+            "escuela_nombre": "escuela_nombre",
+            "cct": "cct",   # se sobreescribe al de la URL
+            "turno": "turno",
+            "nivel": "nivel",
+            "subs_modalidad": "subs_modalidad",
+            "zona_escolar": "zona_escolar",
+            "sector": "sector",
+
+            # Domicilio escuela
+            "dom_esc_calle": "dom_esc_calle",
+            "dom_esc_num_ext": "dom_esc_num_ext",
+            "dom_esc_num_int": "dom_esc_num_int",
+            "dom_esc_cruce1": "dom_esc_cruce1",
+            "dom_esc_cruce2": "dom_esc_cruce2",
+            "dom_esc_localidad": "dom_esc_localidad",
+            "dom_esc_colonia": "dom_esc_colonia",
+            "dom_esc_mun_nom": "dom_esc_mun_nom",
+            "dom_esc_cp": "dom_esc_cp",
+            "dom_esc_coordenadas_gps": "dom_esc_coordenadas_gps",
+
+            # Otros
+            "estado": "estado",
+            "seccion_snte": "seccion_snte",
+            "del_o_ct": "del_o_ct",
+            "org": "org",
+            "coord_reg": "coord_reg",
+            "fun_sin": "fun_sin",
+        }
+
+        # Validación mínima (base)
+        obligatorias = ["paterno","materno","nombre","genero","rfc","curp"]
+        faltantes = [h for h in obligatorias if h not in df.columns]
+        if faltantes:
+            ejemplo = ", ".join(original_cols[:10])
+            flash(f"Faltan columnas base: {', '.join(faltantes)}. Detectados (ejemplo): {ejemplo}", "danger")
+            return redirect(url_for('personal_bp.vista_personal',
+                                    delegacion=plantel.delegacion.nombre, cct=cct))
+
+        # Aviso de columnas del MAP que no vinieron (para entender qué no se cargará)
+        faltan_en_excel = [k for k in MAP.keys() if k not in df.columns]
+        if faltan_en_excel:
+            flash("Columnas esperadas no presentes (se ignorarán): " + ", ".join(faltan_en_excel), "warning")
+
+        # Parseo de fechas robusto
+        for k in ("fecha_ingreso", "fecha_baja_jubilacion"):
+            if k in df.columns:
+                df[k] = pd.to_datetime(df[k], errors="coerce").dt.date
+
+        ok = bad = 0
+        errores = []
+
+        for i, row in df.iterrows():
+            curp_val = (row.get("curp") or "").strip().upper()
+            if not curp_val:
+                bad += 1; errores.append(f"Fila {i+2}: CURP vacío.")
+                continue
+
+            dest = {}
+            for src_norm, db_field in MAP.items():
+                if src_norm not in df.columns:
                     continue
+                val = row[src_norm]
+                if pd.isna(val):
+                    val = None
 
-                nuevo = Personal(
-                    cct=cct,
-                    apellido_paterno=limpiar_str(row.get('apellido_paterno')),
-                    apellido_materno=limpiar_str(row.get('apellido_materno')),
-                    nombre=limpiar_str(row.get('nombre')),
-                    genero=limpiar_str(row.get('genero')),
-                    rfc=limpiar_str(row.get('rfc')),
-                    curp=limpiar_str(row.get('curp')),
-                    clave_presupuestal=limpiar_str(row.get('clave_presupuestal')),
-                    funcion=limpiar_str(row.get('funcion')),
-                    grado_estudios=limpiar_str(row.get('grado_maximo_estudios')),
-                    titulado=limpiar_str(row.get('titulado')),
-                    fecha_ingreso=convertir_fecha(row.get('fecha_ingreso')),
-                    fecha_baja_jubilacion=convertir_fecha(row.get('fecha_baja_jubilacion')),
-                    estatus_membresia=limpiar_str(row.get('estatus_membresia')),
-                    nombramiento=limpiar_str(row.get('nombramiento')),
-                    domicilio=limpiar_str(row.get('domicilio')),
-                    numero=limpiar_entero(row.get('numero')),
-                    localidad=limpiar_str(row.get('localidad')),
-                    colonia=limpiar_str(row.get('colonia')),
-                    municipio=limpiar_str(row.get('municipio')),
-                    cp=limpiar_entero(row.get('cp')),
-                    tel1=limpiar_entero(row.get('tel1')),
-                    tel2=limpiar_entero(row.get('tel2')),
-                    correo_electronico=limpiar_str(row.get('correo_electronico'))
-                )
+                # Normalizaciones puntuales
+                if db_field == "genero" and val:
+                    g = str(val).strip().upper()
+                    val = "H" if g in ("H","MASCULINO","HOMBRE") else ("M" if g in ("M","F","FEMENINO","MUJER") else None)
 
-                db.session.add(nuevo)
-                registros_agregados += 1
+                if db_field in ("cp","numero","tel1","tel2","cct","clave_presupuestal"):
+                    val = None if val is None else str(val).strip()
 
-            db.session.commit()
-            registrar_notificacion(
-                f"{current_user.nombre} importó {registros_agregados} personas (ignoradas: {registros_ignorados}) desde Excel en {cct}",
-                tipo="personal"
-            )
-            flash(f'Se cargaron {registros_agregados} personas. {registros_ignorados} filas ignoradas.', 'success')
+                if db_field == "num":
+                    s = "" if val is None else str(val).strip()
+                    val = int(s) if s.isdigit() else None
 
-        except Exception as e:
-            db.session.rollback()
-            flash(f'❌ Error al procesar el archivo: {str(e)}', 'danger')
-    else:
-        flash('Formato de archivo no permitido. Usa archivos .xlsx', 'danger')
+                if db_field in ("rfc","curp") and val:
+                    val = str(val).strip().upper()
 
-    return redirect(url_for('personal_bp.vista_personal', delegacion=plantel.delegacion, cct=cct))
+                dest[db_field] = val
+
+            # Fuerza adscripción al CCT de la URL
+            dest["cct"] = cct
+
+            # FK CCT
+            if not Plantel.query.filter_by(cct=dest["cct"]).first():
+                bad += 1; errores.append(f"Fila {i+2}: CCT {dest['cct']} no existe en plantel.")
+                continue
+
+            # UPSERT por CURP
+            p = Personal.query.filter_by(curp=curp_val).first()
+            if not p:
+                p = Personal(curp=curp_val)
+                db.session.add(p)
+
+            # Asignar campos existentes
+            for k, v in dest.items():
+                if hasattr(Personal, k):
+                    setattr(p, k, v)
+
+            try:
+                db.session.commit()
+                ok += 1
+            except Exception as e:
+                db.session.rollback()
+                bad += 1
+                errores.append(f"Fila {i+2}: {e}")
+
+        msg = f"Importación v2: {ok} OK, {bad} con error."
+        if errores:
+            flash(msg + " " + " | ".join(errores[:5]), "warning")
+        else:
+            flash(msg, "success")
+
+        registrar_notificacion(
+            f"{current_user.nombre} importó {ok} personas (errores: {bad}) desde Excel v2 en {cct}",
+            tipo="personal"
+        )
+    except Exception as e:
+        db.session.rollback()
+        flash(f"❌ Error al procesar el archivo: {e}", "danger")
+
+    return redirect(url_for('personal_bp.vista_personal',
+                            delegacion=plantel.delegacion.nombre, cct=cct))
+
+
 
 @personal_bp.route("/historial/<entidad>/<int:id>")
 @login_required

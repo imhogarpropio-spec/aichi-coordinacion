@@ -6,6 +6,7 @@ from flask_login import UserMixin
 from datetime import datetime
 from pytz import timezone
 from werkzeug.security import check_password_hash, generate_password_hash
+from sqlalchemy.orm import foreign
 
 
 
@@ -47,6 +48,7 @@ class Usuario(UserMixin, db.Model):
             return False
 
 class Plantel(db.Model):
+
     id = db.Column(db.Integer, primary_key=True)
     cct = db.Column(db.String(15), unique=True, nullable=False)
     nombre = db.Column(db.String(100), nullable=False)
@@ -70,21 +72,32 @@ class Plantel(db.Model):
     delegacion_id = db.Column(db.Integer, db.ForeignKey('delegacion.id'), nullable=False)
     delegacion = db.relationship('Delegacion', back_populates='planteles')
 
-    personal = db.relationship('Personal', backref='plantel', cascade='all, delete-orphan', primaryjoin="Plantel.cct==foreign(Personal.cct)")
+    personal = db.relationship(
+        'Personal',
+        backref='plantel',                     # crea el atributo p.plantel
+        cascade='all, delete-orphan',
+        lazy='dynamic',
+        primaryjoin=lambda: foreign(Personal.cct) == Plantel.cct
+    )
 
 
 class Personal(db.Model):
+    __tablename__ = 'personal'
+
     id = db.Column(db.Integer, primary_key=True)
+
+    # --- Campos base ---
     apellido_paterno = db.Column(db.String(100), nullable=False)
     apellido_materno = db.Column(db.String(100), nullable=False)
     nombre = db.Column(db.String(100), nullable=False)
-    genero = db.Column(db.String(1), nullable=False)  # 'H' o 'M'
+    genero = db.Column(db.String(1), nullable=False)
     rfc = db.Column(db.String(13), nullable=False)
     curp = db.Column(db.String(18), nullable=False)
     clave_presupuestal = db.Column(db.String(100))
     funcion = db.Column(db.String(100))
+    funcion_coordinacion = db.Column(db.String(150), nullable=True)
     grado_estudios = db.Column(db.String(100))
-    titulado = db.Column(db.String(20))  # 'SI' o 'NO'
+    titulado = db.Column(db.String(20))
     fecha_ingreso = db.Column(db.Date)
     fecha_baja_jubilacion = db.Column(db.Date)
     estatus_membresia = db.Column(db.String(50))
@@ -98,10 +111,46 @@ class Personal(db.Model):
     tel1 = db.Column(db.String(20))
     tel2 = db.Column(db.String(20))
     correo_electronico = db.Column(db.String(100))
-    cct = db.Column(db.String(15), db.ForeignKey('plantel.cct'))
-    observaciones = db.relationship('ObservacionPersonal', backref='persona', lazy='dynamic')
 
- 
+    # --- Campos v2 ---
+    num = db.Column(db.Integer)
+    dp_num_int = db.Column(db.Text)
+    dp_cruce1 = db.Column(db.Text)
+    dp_cruce2 = db.Column(db.Text)
+
+    escuela_nombre = db.Column(db.Text)
+    turno = db.Column(db.Text)
+    nivel = db.Column(db.Text)
+    subs_modalidad = db.Column(db.Text)
+    zona_escolar = db.Column(db.Text)
+    sector = db.Column(db.Text)
+
+    dom_esc_calle = db.Column(db.Text)
+    dom_esc_num_ext = db.Column(db.Text)
+    dom_esc_num_int = db.Column(db.Text)
+    dom_esc_cruce1 = db.Column(db.Text)
+    dom_esc_cruce2 = db.Column(db.Text)
+    dom_esc_localidad = db.Column(db.Text)
+    dom_esc_colonia = db.Column(db.Text)
+    dom_esc_mun_nom = db.Column(db.Text)
+    dom_esc_cp = db.Column(db.Text)
+    dom_esc_coordenadas_gps = db.Column(db.Text)
+
+    estado = db.Column(db.Text)
+    seccion_snte = db.Column(db.Text)
+    del_o_ct = db.Column(db.Text)
+    org = db.Column(db.Text)
+    coord_reg = db.Column(db.Text)
+    fun_sin = db.Column(db.Text)
+
+    # FK
+    cct = db.Column(db.String(15), db.ForeignKey('plantel.cct'))
+
+    # Relaciones
+    observaciones = db.relationship('ObservacionPersonal', backref='persona', lazy='dynamic')
+    # OJO: NO declares aquí `plantel = db.relationship(...)` si en Plantel ya tienes:
+    # personal = db.relationship('Personal', backref='plantel', ...)
+
 
 class Acceso(db.Model):
     id = db.Column(db.Integer, primary_key=True)

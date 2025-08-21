@@ -1,13 +1,17 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, send_from_directory, send_file, abort
+from flask import Blueprint, render_template, request, redirect, url_for, flash, send_from_directory, send_file, abort, jsonify
 from flask_login import login_required, current_user
 from io import BytesIO
 from datetime import datetime
-from utils import registrar_notificacion
+from utils import registrar_notificacion, registrar_historial
 from models import db, Delegacion, Plantel, Personal
 import pandas as pd
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import func
-from authz import roles_required
+from sqlalchemy import func, not_
+from authz import roles_required, has_role
+from pytz import timezone
+import json
+
+
 
 # Excel
 from openpyxl import Workbook
@@ -23,6 +27,40 @@ from reportlab.lib.units import cm
 
 
 delegaciones_bp = Blueprint('delegaciones_bp', __name__)
+
+def _parse_tabulator_args(req):
+    page = req.args.get("page", type=int) or 1
+    size = req.args.get("size", type=int) or 25
+
+    # sorters[n][field], sorters[n][dir]
+    sorters = []
+    i = 0
+    while True:
+        field = req.args.get(f"sorter[{i}][field]")
+        if field is None:
+            break
+        sorters.append({
+            "field": field,
+            "dir": req.args.get(f"sorter[{i}][dir]", "asc")
+        })
+        i += 1
+
+    # filter[n][field], filter[n][value]
+    filters = []
+    i = 0
+    while True:
+        field = req.args.get(f"filter[{i}][field]")
+        if field is None:
+            break
+        filters.append({
+            "field": field,
+            "value": req.args.get(f"filter[{i}][value]")
+        })
+        i += 1
+
+    return page, size, sorters, filters
+
+
 
 def _alcance_delegaciones_query():
     """Devuelve el query base de delegaciones respetando el rol."""
@@ -76,17 +114,22 @@ def _fetch_personal_por_cct():
 
         # Personal por CCT (join por CCT)
         per_rows = (
-            db.session.query(Personal.cct, Personal.genero, Personal.funcion, func.count(Personal.id))
+            db.session.query(
+                Personal.cct,
+                Personal.genero,
+                Personal.funcion_coordinacion,
+                func.count(Personal.id)
+            )
             .join(Plantel, Personal.cct == Plantel.cct)
             .filter(Plantel.delegacion_id == d.id)
-            .group_by(Personal.cct, Personal.genero, Personal.funcion)
+            .group_by(Personal.cct, Personal.genero, Personal.funcion_coordinacion)
             .all()
         )
 
-        # Acumular por CCT
-        por_cct = {}  # cct -> datos
+        # Acumular por CCT (usa funcion_coordinacion)
+        por_cct = {}
         funciones_globales = set()
-        for cct, genero, funcion, cnt in per_rows:
+        for cct, genero, funcion_coord, cnt in per_rows:
             if not cct:
                 continue
             nodo = por_cct.setdefault(cct, {
@@ -100,12 +143,9 @@ def _fetch_personal_por_cct():
                 nodo["hombres"] += int(cnt)
             elif g == "M":
                 nodo["mujeres"] += int(cnt)
-            else:
-                # si no viene H/M, no lo contamos en H/M pero sí en total
-                pass
             nodo["total"] += int(cnt)
 
-            f = (funcion or "SIN FUNCIÓN").upper()
+            f = (funcion_coord or "SIN FUNCIÓN COORD.").upper()
             nodo["funciones"][f] = nodo["funciones"].get(f, 0) + int(cnt)
             funciones_globales.add(f)
 
@@ -350,8 +390,6 @@ def editar_delegacion(id):
     )
     flash("Delegación actualizada correctamente.", "success")
     return redirect(url_for('delegaciones_bp.vista_delegaciones'))
-    flash('Delegación actualizada.', 'success')
-    return redirect(url_for('delegaciones_bp.vista_delegaciones'))
 
 @delegaciones_bp.route('/delegacion/<int:delegacion_id>/ccts', methods=['GET', 'POST'])
 @login_required
@@ -396,6 +434,7 @@ def vista_ccts_por_delegacion(delegacion_id):
 
     ccts = delegacion.planteles
     return render_template('consulta_ccts.html', delegacion=delegacion, ccts=ccts)
+
 
 @delegaciones_bp.route('/eliminar_cct/<int:id>', methods=['POST'])
 @roles_required('admin', 'coordinador')
@@ -1119,3 +1158,547 @@ def agregar_delegacion():
         flash(f'No se pudo crear la delegación: {e}', 'danger')
 
     return redirect(url_for('delegaciones_bp.vista_delegaciones'))
+
+@delegaciones_bp.route('/delegaciones/<int:delegacion_id>/tabla-personal')
+@login_required
+def tabla_personal_delegacion(delegacion_id):
+    delegacion = Delegacion.query.get_or_404(delegacion_id)
+
+    # 👇 Delegado: solo su propia delegación
+    if current_user.rol == 'delegado' and current_user.delegacion_id != delegacion.id:
+        from flask import abort
+        abort(403)
+
+    # permiso de ver: cualquiera con rol válido que ya uses
+    can_edit = has_role('admin') or has_role('coordinador')
+    return render_template(
+        'delegaciones/tabla_personal.html',
+        delegacion=delegacion,
+        can_edit=can_edit
+    )
+
+# ---------- API: listar (GET remoto para Tabulator) ----------
+@delegaciones_bp.route('/api/delegaciones/<int:delegacion_id>/personal')
+@login_required
+def api_listar_personal(delegacion_id):
+    Delegacion.query.get_or_404(delegacion_id)
+
+    # 👇 Delegado: solo su propia delegación
+    if current_user.rol == "delegado" and current_user.delegacion_id != delegacion_id:
+        from flask import abort
+        abort(403)
+
+    page, size, sorters, filters = _parse_tabulator_args(request)
+
+    # JOIN con Plantel para filtrar por delegación
+    query = (Personal.query
+             .join(Plantel, Personal.cct == Plantel.cct)
+             .filter(Plantel.delegacion_id == delegacion_id))
+    
+    
+
+    # Alias por compatibilidad (si algún día quisieras usarlos),
+    # pero OJO: el JSON que devolvemos abajo solo trae columnas REALES del modelo.
+    ALIAS = {
+        "puesto": Personal.funcion_coordinacion,
+        "estatus": Personal.estatus_membresia,
+        "telefono": Personal.tel1,
+        "correo": Personal.correo_electronico,
+    }
+
+    # ---- Filtros ----
+    for f in filters:
+        field = (f or {}).get("field")
+        value = (f or {}).get("value")
+        if not field or value in (None, ""):
+            continue
+        col = getattr(Personal, field, None) or ALIAS.get(field)
+        if col is None:
+            continue
+        query = query.filter(col.ilike(f"%{value}%"))
+
+    # ---- Orden ----
+    for s in sorters:
+        field = (s or {}).get("field")
+        direction = (s or {}).get("dir", "asc")
+        col = getattr(Personal, field, None) or ALIAS.get(field)
+        if col is None:
+            continue
+        query = query.order_by(col.asc() if direction == "asc" else col.desc())
+
+    total = query.count()
+    rows = query.offset((page - 1) * size).limit(size).all()
+
+    # ✔️ Tomamos TODAS las columnas reales del modelo Personal automáticamente
+    PERSONAL_COLS = [c.name for c in Personal.__table__.columns]
+
+    def to_dict(p: Personal):
+        d = {}
+        for col in PERSONAL_COLS:
+            v = getattr(p, col, None)
+            # serializar date/datetime
+            if hasattr(v, "isoformat"):
+                v = v.isoformat()
+            d[col] = v
+        return d
+
+    return jsonify({"data": [to_dict(r) for r in rows], "total": total})
+
+
+
+
+@delegaciones_bp.route('/api/delegaciones/<int:delegacion_id>/personal/bulk-update', methods=['POST'])
+@login_required
+@roles_required('admin', 'coordinador')
+def api_guardar_personal_bulk(delegacion_id):
+    Delegacion.query.get_or_404(delegacion_id)
+
+    payload = request.get_json(silent=True) or {}
+    rows = payload.get('rows', [])
+    if not isinstance(rows, list):
+        abort(400, description="Formato inválido")
+
+    debug = request.args.get("debug", type=int) == 1
+    skips = []  # para depuración opcional
+
+    # Campos que aceptará el guardado masivo (incluye alias usados en la UI)
+    UPDATABLE = {
+        # Identificación / base
+        "cct", "apellido_paterno", "apellido_materno", "nombre", "genero",
+        "curp", "rfc", "clave_presupuestal", "funcion_coordinacion", "funcion", "grado_estudios", "titulado",
+        "fecha_ingreso", "fecha_baja_jubilacion", "estatus_membresia", "nombramiento",
+
+        # Contacto / domicilio persona
+        "domicilio", "numero", "localidad", "colonia", "municipio", "cp",
+        "tel1", "tel2", "correo_electronico",
+
+        # v2
+        "num", "dp_num_int", "dp_cruce1", "dp_cruce2",
+
+        # Datos de plantel “cacheados” en personal (si los usas en UI)
+        "escuela_nombre", "turno", "nivel", "subs_modalidad", "zona_escolar", "sector",
+        "dom_esc_calle", "dom_esc_num_ext", "dom_esc_num_int", "dom_esc_cruce1", "dom_esc_cruce2",
+        "dom_esc_localidad", "dom_esc_colonia", "dom_esc_mun_nom", "dom_esc_cp", "dom_esc_coordenadas_gps",
+
+        # Otros
+        "estado", "seccion_snte", "del_o_ct", "org", "coord_reg", "fun_sin",
+
+        # Alias expuestos en la tabla
+        "puesto", "estatus", "telefono", "correo"
+    }
+
+    # Alias de la UI → atributo real del modelo
+    SETATTR_ALIAS = {
+        "puesto": "funcion_coordinacion",     # 👈 el alias 'puesto' edita funcion_coordinacion
+        "estatus": "estatus_membresia",
+        "telefono": "tel1",
+        "correo": "correo_electronico",
+    }
+
+    # helper: normaliza "" -> None (opcional, ajusta si quieres guardar "")
+    def _norm_empty(val):
+        if isinstance(val, str):
+            v = val.strip()
+            return v if v != "" else None
+        return val
+
+    # helper: compara updated_at tolerando tz/precisión
+    def _dt_sig(s: str):
+        # toma solo 'YYYY-mm-ddTHH:MM:SS'
+        if not s or not isinstance(s, str):
+            return None
+        return s[:19]
+
+    # ✅ catálogo permitido para funcion_coordinacion + normalización
+    ALLOWED_FUNC_COORD = {
+        "DIRECTOR (A)",
+        "DOCENTE",
+        "ADMINISTRATIVO (A)",
+        "PREFECTO (A)",
+        "INTENDENCIA",
+    }
+    def _canon_func_coord(val):
+        """Normaliza variantes y valida contra el set permitido."""
+        if val is None:
+            return None
+        s = str(val).strip().upper()
+
+        # Normaliza paréntesis y espacios
+        s = s.replace("DIRECTOR(A)", "DIRECTOR (A)")
+        s = s.replace("ADMINISTRATIVO(A)", "ADMINISTRATIVO (A)")
+        s = s.replace("PREFECTO(A)", "PREFECTO (A)")
+        s = " ".join(s.split())
+
+        # Sinónimos frecuentes → forma canónica
+        synonyms = {
+            "DIRECTOR": "DIRECTOR (A)",
+            "DIRECTORA": "DIRECTOR (A)",
+            "PROFESOR": "DOCENTE",
+            "MAESTRO": "DOCENTE",
+            "MAESTRA": "DOCENTE",
+            "ADMINISTRATIVO": "ADMINISTRATIVO (A)",
+            "PREFECTO": "PREFECTO (A)",
+            "PREFECTA": "PREFECTO (A)",
+            "INTENDENTE": "INTENDENCIA",
+        }
+        s = synonyms.get(s, s)
+
+        return s if s in ALLOWED_FUNC_COORD else None
+
+    actualizados = 0
+
+    for r in rows:
+        # --- ID robusto ---
+        pid_raw = r.get("id")
+        try:
+            pid = int(pid_raw)
+        except (TypeError, ValueError):
+            if debug: skips.append({"id": pid_raw, "razon": "id_invalido"})
+            continue
+
+        # Asegura que la persona pertenezca a la delegación (JOIN con Plantel)
+        persona = (Personal.query
+                   .join(Plantel, Personal.cct == Plantel.cct)
+                   .filter(Personal.id == pid, Plantel.delegacion_id == delegacion_id)
+                   .first())
+        if not persona:
+            if debug: skips.append({"id": pid, "razon": "no_pertenece_delegacion_o_no_existe"})
+            continue
+
+        # Bloqueo optimista (tolerante)
+        client_updated_at = r.get("updated_at")
+        server_updated_at = getattr(persona, "updated_at", None)
+        if client_updated_at and server_updated_at:
+            if _dt_sig(server_updated_at.isoformat()) != _dt_sig(client_updated_at):
+                if debug: skips.append({"id": pid, "razon": "conflicto_updated_at"})
+                continue
+
+        cambios = []
+        for k, v in r.items():
+            if k not in UPDATABLE:
+                continue
+
+            attr = SETATTR_ALIAS.get(k, k)  # alias → real
+            if not hasattr(persona, attr):
+                if debug: skips.append({"id": pid, "campo": k, "razon": "attr_no_existe"})
+                continue
+
+            # Normalizaciones ligeras
+            v = _norm_empty(v)
+
+            if attr in ("curp", "rfc") and isinstance(v, str):
+                v = v.strip().upper() or None
+
+            if attr in ("fecha_ingreso", "fecha_baja_jubilacion") and isinstance(v, str) and v:
+                from datetime import datetime as _dt
+                try:
+                    v = _dt.strptime(v[:10], "%Y-%m-%d").date()
+                except ValueError:
+                    if debug: skips.append({"id": pid, "campo": attr, "razon": "fecha_invalida"})
+                    continue
+
+            # Validación FK del CCT si cambia
+            if attr == "cct" and v and v != (persona.cct or ""):
+                if not Plantel.query.filter_by(cct=v).first():
+                    if debug: skips.append({"id": pid, "campo": "cct", "razon": "cct_inexistente"})
+                    continue
+
+            # ✅ Validación catálogo funcion_coordinacion
+            if attr == "funcion_coordinacion":
+                if v is not None:
+                    canon = _canon_func_coord(v)
+                    if not canon:
+                        if debug: skips.append({"id": pid, "campo": attr, "razon": "valor_no_permitido"})
+                        continue
+                    v = canon
+
+            prev = getattr(persona, attr, None)
+            if v != prev:
+                setattr(persona, attr, v)
+                cambios.append((attr, prev, v))
+
+        if cambios:
+            if hasattr(persona, "updated_at"):
+                persona.updated_at = datetime.now(timezone('America/Mexico_City'))
+            db.session.add(persona)
+            db.session.flush()
+
+            for campo, antes, despues in cambios:
+                try:
+                    registrar_historial(
+                        entidad="personal",
+                        campo=campo,
+                        valor_anterior=antes,
+                        valor_nuevo=despues,
+                        entidad_id=persona.id,
+                        usuario=getattr(current_user, "nombre", "sistema"),
+                        tipo="edicion masiva"
+                    )
+                except Exception:
+                    pass
+            actualizados += 1
+        else:
+            if debug: skips.append({"id": pid, "razon": "sin_cambios"})
+
+    db.session.commit()
+    resp = {"ok": True, "actualizados": actualizados}
+    if debug:
+        resp["skips"] = skips
+    return jsonify(resp)
+
+
+
+@delegaciones_bp.route('/api/delegaciones/<int:delegacion_id>/personal/summary')
+@login_required
+def api_resumen_personal(delegacion_id):
+    Delegacion.query.get_or_404(delegacion_id)
+    if current_user.rol == "delegado" and current_user.delegacion_id != delegacion_id:
+        from flask import abort
+        abort(403)
+
+    # 👉 lee parámetro (por si un día quieres incluirlos desde la UI)
+    excluir_en_proceso = (request.args.get("excluir_baja_en_proceso", "1") == "1")
+
+    q = (
+        db.session.query(Personal.funcion_coordinacion, Personal.genero, func.count(Personal.id))
+        .join(Plantel, Personal.cct == Plantel.cct)
+        .filter(Plantel.delegacion_id == delegacion_id)
+        .filter(not_(Personal.estatus_membresia.in_(['BAJA EN PROCESO','BAJA'])))
+        .group_by(Personal.funcion_coordinacion, Personal.genero)
+    )
+
+
+    if excluir_en_proceso:
+        q = q.filter(Personal.estatus_membresia.notin_(['BAJA EN PROCESO','BAJA']))
+
+    # (opcional) si también quieres excluir BAJA definitiva:
+    # q = q.filter(Personal.estatus_membresia.notin_(['BAJA EN PROCESO','BAJA']))
+
+    q = q.group_by(Personal.funcion_coordinacion, Personal.genero).all()
+
+    funciones_map = {}
+    tot_h = tot_m = 0
+    for funcion_coord, genero, cnt in q:
+        f = (funcion_coord or "SIN FUNCIÓN COORD.").upper()
+        g = (genero or "").upper()
+        nodo = funciones_map.setdefault(f, {"funcion": f, "hombres": 0, "mujeres": 0, "total": 0})
+        cnt = int(cnt)
+        if g == "H":
+            nodo["hombres"] += cnt; tot_h += cnt
+        elif g == "M":
+            nodo["mujeres"] += cnt; tot_m += cnt
+        nodo["total"] += cnt
+
+    tot_total = sum(v["total"] for v in funciones_map.values())
+    funciones_list = sorted(funciones_map.values(), key=lambda x: x["funcion"])
+
+    return jsonify({
+        "totales": {"hombres": tot_h, "mujeres": tot_m, "total": tot_total},
+        "funciones": funciones_list
+    })
+
+
+@delegaciones_bp.route('/api/delegaciones/<int:delegacion_id>/personal/export-excel', endpoint='api_exportar_personal_excel')
+@login_required
+def api_exportar_personal_excel(delegacion_id):
+    # Validación de alcance
+    Delegacion.query.get_or_404(delegacion_id)
+    if current_user.rol == "delegado" and current_user.delegacion_id != delegacion_id:
+        from flask import abort
+        abort(403)
+
+    # Base query: solo personal de la delegación
+    base_query = (Personal.query
+                  .join(Plantel, Personal.cct == Plantel.cct)
+                  .filter(Plantel.delegacion_id == delegacion_id))
+
+    # ⛔ EXCLUIR BAJA EN PROCESO y BAJA (hazlo aquí; NO uses 'query' todavía)
+    base_query = base_query.filter(~Personal.estatus_membresia.in_(["BAJA EN PROCESO", "BAJA"]))
+
+    # Alias opcionales (compatibles con la UI)
+    ALIAS = {
+        "puesto": Personal.funcion_coordinacion,
+        "estatus": Personal.estatus_membresia,
+        "telefono": Personal.tel1,
+        "correo": Personal.correo_electronico,
+    }
+
+    # Reusar sorters/filters que manda Tabulator
+    _, _, sorters, filters = _parse_tabulator_args(request)
+
+    # --- Aplicar filtros (para datos y para resumen) ---
+    def apply_filters(q):
+        for f in filters:
+            field = (f or {}).get("field")
+            value = (f or {}).get("value")
+            if not field or value in (None, ""):
+                continue
+            col = getattr(Personal, field, None) or ALIAS.get(field)
+            if col is None:
+                continue
+            q = q.filter(col.ilike(f"%{value}%"))
+        return q
+
+    # ==== Hoja 1: Datos ====
+    query = apply_filters(base_query)
+
+    # Orden
+    for s in sorters:
+        field = (s or {}).get("field")
+        direction = (s or {}).get("dir", "asc")
+        col = getattr(Personal, field, None) or ALIAS.get(field)
+        if col is None:
+            continue
+        query = query.order_by(col.asc() if direction == "asc" else col.desc())
+
+    rows = query.all()
+
+    # ---------- Columnas a exportar ----------
+    ALL_COLS = [c.name for c in Personal.__table__.columns]
+    HIDE_FIELDS = {"num", "id"}
+
+    DISPLAY_ORDER = [
+        "apellido_paterno","apellido_materno","nombre","genero","rfc","curp",
+        "clave_presupuestal","funcion_coordinacion","funcion","grado_estudios","titulado",
+        "fecha_ingreso","fecha_baja_jubilacion","estatus_membresia","nombramiento",
+        "domicilio","numero","dp_num_int","dp_cruce1","dp_cruce2",
+        "localidad","colonia","municipio","cp","tel1","tel2","correo_electronico",
+        "escuela_nombre","cct","turno","nivel","subs_modalidad","zona_escolar","sector",
+        "dom_esc_calle","dom_esc_num_ext","dom_esc_num_int","dom_esc_cruce1","dom_esc_cruce2",
+        "dom_esc_localidad","dom_esc_colonia","dom_esc_mun_nom","dom_esc_cp","dom_esc_coordenadas_gps",
+        "estado","seccion_snte","del_o_ct","org","coord_reg","fun_sin",
+        "updated_at"
+    ]
+
+    ordered_cols = [c for c in DISPLAY_ORDER if c in ALL_COLS and c not in HIDE_FIELDS]
+    for c in ALL_COLS:
+        if c not in ordered_cols and c not in HIDE_FIELDS:
+            ordered_cols.append(c)
+
+    EXCEL_TITLES = {
+        "apellido_paterno":"PATERNO","apellido_materno":"MATERNO","nombre":"NOMBRE",
+        "genero":"GENERO","rfc":"RFC","curp":"CURP","clave_presupuestal":"CLAVE_PRESUPUESTAL",
+        "funcion_coordinacion":"FUNCION_COORDINACION","funcion":"FUNCION","grado_estudios":"GRADO_MAXIMO_ESTUDIOS","titulado":"TITULADO",
+        "fecha_ingreso":"FECHA_INGRESO","fecha_baja_jubilacion":"FCH_BAJ_JUB",
+        "estatus_membresia":"STATUS_MEMB","nombramiento":"NOMBRAMIENTO",
+        "domicilio":"DP_CALLE","numero":"DP_NUM_EXT","dp_num_int":"DP_NUM_INT",
+        "dp_cruce1":"DP_CRUCE1","dp_cruce2":"DP_CRUCE2","localidad":"DP_LOCALIDAD",
+        "colonia":"DP_COLONIA","municipio":"DP_MUN_NOM","cp":"DP_CP",
+        "tel1":"DP_TEL1","tel2":"DP_TEL2","correo_electronico":"CORREO_ELECTRONICO",
+        "escuela_nombre":"ESCUELA_NOMBRE","cct":"CCT","turno":"TURNO","nivel":"NIVEL",
+        "subs_modalidad":"SUBS_MODALIDAD","zona_escolar":"ZONA_ESCOLAR","sector":"SECTOR",
+        "dom_esc_calle":"DOM_ESC_CALLE","dom_esc_num_ext":"DOM_ESC_NUM_EXT","dom_esc_num_int":"DOM_ESC_NUM_INT",
+        "dom_esc_cruce1":"DOM_ESC_CRUCE1","dom_esc_cruce2":"DOM_ESC_CRUCE2",
+        "dom_esc_localidad":"DOM_ESC_LOCALIDAD","dom_esc_colonia":"DOM_ESC_COLONIA",
+        "dom_esc_mun_nom":"DOM_ESC_MUN_NOM","dom_esc_cp":"DOM_ESC_CP","dom_esc_coordenadas_gps":"DOM_ESC_COORDENADAS GPS",
+        "estado":"ESTADO","seccion_snte":"SECCION_SNTE","del_o_ct":"DEL_O_CT","org":"ORG","coord_reg":"COORD_REG","fun_sin":"FUN_SIN",
+        "updated_at":"UPDATED_AT"
+    }
+
+    # ---------- Construir Excel ----------
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
+    from io import BytesIO
+    from datetime import date, datetime as dt
+
+    wb = Workbook()
+
+    # Hoja 1: Datos
+    ws = wb.active
+    ws.title = "Personal"
+
+    bold = Font(bold=True)
+    center = Alignment(horizontal="center", vertical="center")
+    header_fill = PatternFill(start_color="ECECEC", end_color="ECECEC", fill_type="solid")
+    thin = Side(style="thin", color="AAAAAA")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    ws.append([EXCEL_TITLES.get(c, c.upper()) for c in ordered_cols])
+    for cell in ws[1]:
+        cell.font = bold; cell.alignment = center; cell.fill = header_fill; cell.border = border
+
+    for p in rows:
+        vals = []
+        for c in ordered_cols:
+            v = getattr(p, c, "")
+            if isinstance(v, (dt, date)):
+                v = v.isoformat()
+            vals.append(v)
+        ws.append(vals)
+
+    for r in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=len(ordered_cols)):
+        for cell in r:
+            cell.border = border
+
+    for idx, c in enumerate(ordered_cols, start=1):
+        max_len = len(str(EXCEL_TITLES.get(c, c)))
+        for r in range(2, ws.max_row + 1):
+            val = ws.cell(row=r, column=idx).value
+            max_len = max(max_len, len(str(val)) if val is not None else 0)
+        ws.column_dimensions[get_column_letter(idx)].width = min(max_len + 3, 45)
+
+    ws.freeze_panes = "A2"
+
+    # ==== Hoja 2: Resumen ====
+    ws2 = wb.create_sheet("Resumen")
+
+    sum_query = (db.session.query(Personal.funcion_coordinacion, Personal.genero, func.count(Personal.id))
+                 .join(Plantel, Personal.cct == Plantel.cct)
+                 .filter(Plantel.delegacion_id == delegacion_id))
+
+    # 💡 Mismo filtro de exclusión en el resumen
+    sum_query = sum_query.filter(~Personal.estatus_membresia.in_(["BAJA EN PROCESO", "BAJA"]))
+
+    sum_query = apply_filters(sum_query)
+
+    funciones_map, tot_h, tot_m = {}, 0, 0
+    for funcion_coord, genero, cnt in sum_query.group_by(Personal.funcion_coordinacion, Personal.genero).all():
+        f = (funcion_coord or "SIN FUNCIÓN COORD.").upper()
+        g = (genero or "").upper()
+        nodo = funciones_map.setdefault(f, {"hombres": 0, "mujeres": 0, "total": 0})
+        cnt = int(cnt)
+        if g == "H":
+            nodo["hombres"] += cnt; tot_h += cnt
+        elif g == "M":
+            nodo["mujeres"] += cnt; tot_m += cnt
+        nodo["total"] += cnt
+
+    tot_total = sum(v["total"] for v in funciones_map.values())
+
+    ws2.merge_cells("A1:D1")
+    ws2["A1"] = "RESUMEN POR FUNCIÓN DE COORDINACIÓN"
+    ws2["A1"].font = Font(size=14, bold=True)
+    ws2["A1"].alignment = center
+
+    ws2.append([])
+    ws2.append(["Hombres", "Mujeres", "Total"])
+    for c in ws2[3]:
+        c.font = bold; c.alignment = center; c.fill = header_fill; c.border = border
+    ws2.append([tot_h, tot_m, tot_total])
+
+    ws2.append([])
+    ws2.append(["Función de coordinación", "Hombres", "Mujeres", "Total"])
+    for c in ws2[6]:
+        c.font = bold; c.alignment = center; c.fill = header_fill; c.border = border
+
+    row_i = 7
+    for funcion in sorted(funciones_map.keys()):
+        vals = funciones_map[funcion]
+        ws2.append([funcion, vals["hombres"], vals["mujeres"], vals["total"]])
+        for c in ws2[row_i]:
+            c.border = border
+        row_i += 1
+
+    for col_idx in range(1, 5):
+        max_len = 0
+        for r in range(1, ws2.max_row + 1):
+            val = ws2.cell(row=r, column=col_idx).value
+            max_len = max(max_len, len(str(val)) if val is not None else 0)
+        ws2.column_dimensions[get_column_letter(col_idx)].width = min(max_len + 3, 45)
+
+    output = BytesIO()
+    wb.save(output); output.seek(0)
+    filename = f"personal_deleg_{delegacion_id}_{dt.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return send_file(output, as_attachment=True, download_name=filename,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

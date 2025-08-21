@@ -3,6 +3,14 @@
 
 {% block content %}
 
+{% macro campo(label, value) -%}
+  <div class="col-md-4 mb-2">
+    <small class="text-muted">{{ label }}</small>
+    <div class="fw-semibold">{{ value if value not in (None, '') else '—' }}</div>
+  </div>
+{%- endmacro %}
+
+
 <a href="{{ url_for('personal_bp.ver_historial', entidad='personal', id=persona.id) }}" class="btn btn-outline-secondary">
   📜 Ver historial de cambios
 </a>
@@ -48,31 +56,77 @@
 
 
   <!-- Lista de datos -->
-  <ul class="list-group mb-4">
-    <li class="list-group-item"><strong>Apellido paterno:</strong> {{ persona.apellido_paterno }}</li>
-    <li class="list-group-item"><strong>Apellido materno:</strong> {{ persona.apellido_materno }}</li>
-    <li class="list-group-item"><strong>Nombre(s):</strong> {{ persona.nombre }}</li>
-    <li class="list-group-item"><strong>Género:</strong> {{ persona.genero }}</li>
-    <li class="list-group-item"><strong>RFC:</strong> {{ persona.rfc }}</li>
-    <li class="list-group-item"><strong>CURP:</strong> {{ persona.curp }}</li>
-    <li class="list-group-item"><strong>Clave presupuestal:</strong> {{ persona.clave_presupuestal }}</li>
-    <li class="list-group-item"><strong>Función:</strong> {{ persona.funcion }}</li>
-    <li class="list-group-item"><strong>Grado máximo de estudios:</strong> {{ persona.grado_estudios }}</li>
-    <li class="list-group-item"><strong>Titulado:</strong> {{ persona.titulado }}</li>
-    <li class="list-group-item"><strong>Fecha de ingreso:</strong> {{ persona.fecha_ingreso }}</li>
-    <li class="list-group-item"><strong>Fecha baja por jubilación:</strong> {{ persona.fecha_baja_jubilacion }}</li>
-    <li class="list-group-item"><strong>Estatus de membresía:</strong> {{ persona.estatus_membresia }}</li>
-    <li class="list-group-item"><strong>Nombramiento:</strong> {{ persona.nombramiento }}</li>
-    <li class="list-group-item"><strong>Domicilio:</strong> {{ persona.domicilio }}</li>
-    <li class="list-group-item"><strong>Número:</strong> {{ persona.numero }}</li>
-    <li class="list-group-item"><strong>Localidad:</strong> {{ persona.localidad }}</li>
-    <li class="list-group-item"><strong>Colonia:</strong> {{ persona.colonia }}</li>
-    <li class="list-group-item"><strong>Municipio:</strong> {{ persona.municipio }}</li>
-    <li class="list-group-item"><strong>C.P.:</strong> {{ persona.cp }}</li>
-    <li class="list-group-item"><strong>Teléfono 1:</strong> {{ persona.tel1 }}</li>
-    <li class="list-group-item"><strong>Teléfono 2:</strong> {{ persona.tel2 }}</li>
-    <li class="list-group-item"><strong>Correo electrónico:</strong> {{ persona.correo_electronico }}</li>
-    </ul>
+  <!-- ===== Detalle en bloques (v2) ===== -->
+<h5 class="mt-4">Identificación</h5>
+<div class="row">
+  {{ campo('NUM', persona.num) }}
+  {{ campo('Paterno', persona.apellido_paterno) }}
+  {{ campo('Materno', persona.apellido_materno) }}
+  {{ campo('Nombre', persona.nombre) }}
+  {{ campo('Género', persona.genero) }}
+  {{ campo('RFC', persona.rfc) }}
+  {{ campo('CURP', persona.curp) }}
+  {{ campo('Clave presupuestal', persona.clave_presupuestal) }}
+  {{ campo('Función', persona.funcion) }}
+  {{ campo('Grado máximo estudios', persona.grado_estudios) }}
+  {{ campo('Titulado', persona.titulado) }}
+  {{ campo('Fecha ingreso', persona.fecha_ingreso) }}
+  {{ campo('Fecha baja/jub', persona.fecha_baja_jubilacion) }}
+  {{ campo('Estatus membresía', persona.estatus_membresia) }}
+  {{ campo('Nombramiento', persona.nombramiento) }}
+</div>
+
+<h5 class="mt-4">Domicilio (persona)</h5>
+<div class="row">
+  {{ campo('DP_CALLE', persona.domicilio) }}      {# v2 DP_CALLE → campo BD 'domicilio' #}
+  {{ campo('DP_NUM_EXT', persona.numero) }}       {# v2 DP_NUM_EXT → 'numero'          #}
+  {{ campo('DP_NUM_INT', persona.dp_num_int) }}
+  {{ campo('DP_CRUCE1', persona.dp_cruce1) }}
+  {{ campo('DP_CRUCE2', persona.dp_cruce2) }}
+  {{ campo('DP_LOCALIDAD', persona.localidad) }}
+  {{ campo('DP_COLONIA', persona.colonia) }}
+  {{ campo('DP_MUN_NOM', persona.municipio) }}
+  {{ campo('DP_CP', persona.cp) }}
+  {{ campo('DP_TEL1', persona.tel1) }}
+  {{ campo('DP_TEL2', persona.tel2) }}
+  {{ campo('CORREO_ELECTRONICO', persona.correo_electronico) }}
+</div>
+
+<h5 class="mt-4">Datos de la escuela </h5>
+<div class="row">
+  {{ campo('ESCUELA_NOMBRE', persona.escuela_nombre) }}
+  {{ campo('CCT', persona.cct) }}
+  {{ campo('TURNO', persona.turno) }}
+  {{ campo('NIVEL', persona.nivel) }}
+  {{ campo('SUBS_MODALIDAD', persona.subs_modalidad) }}
+  {{ campo('ZONA_ESCOLAR', persona.zona_escolar) }}
+  {{ campo('SECTOR', persona.sector) }}
+</div>
+
+<h5 class="mt-4">Domicilio de la escuela</h5>
+<div class="row">
+  {{ campo('DOM_ESC_CALLE', persona.dom_esc_calle) }}
+  {{ campo('DOM_ESC_NUM_EXT', persona.dom_esc_num_ext) }}
+  {{ campo('DOM_ESC_NUM_INT', persona.dom_esc_num_int) }}
+  {{ campo('DOM_ESC_CRUCE1', persona.dom_esc_cruce1) }}
+  {{ campo('DOM_ESC_CRUCE2', persona.dom_esc_cruce2) }}
+  {{ campo('DOM_ESC_LOCALIDAD', persona.dom_esc_localidad) }}
+  {{ campo('DOM_ESC_COLONIA', persona.dom_esc_colonia) }}
+  {{ campo('DOM_ESC_MUN_NOM', persona.dom_esc_mun_nom) }}
+  {{ campo('DOM_ESC_CP', persona.dom_esc_cp) }}
+  {{ campo('DOM_ESC_COORDENADAS GPS', persona.dom_esc_coordenadas_gps) }}
+</div>
+
+<h5 class="mt-4">Otros</h5>
+<div class="row">
+  {{ campo('ESTADO', persona.estado) }}
+  {{ campo('SECCION_SNTE', persona.seccion_snte) }}
+  {{ campo('DEL_O_CT', persona.del_o_ct) }}
+  {{ campo('ORG', persona.org) }}
+  {{ campo('COORD_REG', persona.coord_reg) }}
+  {{ campo('FUN_SIN', persona.fun_sin) }}
+</div>
+
 
 
 </div>
@@ -93,7 +147,14 @@
 <!-- Lista de observaciones -->
 <div style="max-height: 300px; overflow-y: auto;">
   {% for obs in persona.observaciones %}
-    <div class="border rounded p-2 mb-2 small position-relative"style="{% if 'Motivo de cambio de adscripción:' in obs.texto %}background-color: #ff6a00; color: white;{% else %}background-color: #f8f9fa;{% endif %}">
+    <style>
+      .obs-adscripcion { background-color: #ff6a00; color: white; }
+    </style>
+
+    <div class="border rounded p-2 mb-2 small position-relative
+                {{ 'obs-adscripcion' if 'Motivo de cambio de adscripción:' in (obs.texto or '') else 'bg-light' }}">
+
+
 
       <strong>{{ usuarios_por_id[obs.usuario_id].nombre if obs.usuario_id in usuarios_por_id else 'Usuario' }}</strong>
       <em class="text-muted">({{ obs.fecha.strftime('%d/%m/%Y %H:%M') }})</em><br>
@@ -132,12 +193,24 @@
   <div class="modal-dialog modal-xl modal-dialog-centered">
     <div class="modal-content">
       <form method="POST" action="{{ url_for('personal_bp.editar_personal', id=persona.id) }}">
-        <div class="modal-header">
-          <h5 class="modal-title">Editar datos del personal</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-        </div>
+        <!-- 🔒 Siempre mandar el CCT actual -->
+        <input type="hidden" name="cct" value="{{ persona.cct }}">
+
+        <div class="modal-header">...</div>
+
         <div class="modal-body">
           <div class="row g-2">
+
+            <!-- 👇 Aquí el campo SOLO LECTURA para mostrar el CCT -->
+            <div class="col-md-4">
+              <label class="form-label">CCT de adscripción</label>
+              <input
+                type="text"
+                class="form-control"
+                value="{{ persona.cct }}{% if persona.plantel %} — {{ persona.plantel.nombre }}{% endif %}"
+                readonly>
+            </div>
+            
             {% for label, name, type, value, options in [
               ('Apellido paterno', 'apellido_paterno', 'text', persona.apellido_paterno, None),
               ('Apellido materno', 'apellido_materno', 'text', persona.apellido_materno, None),
@@ -153,15 +226,46 @@
               ('Fecha baja por jubilación', 'fecha_baja_jubilacion', 'date', persona.fecha_baja_jubilacion, None),
               ('Estatus de membresía', 'estatus_membresia', 'select', persona.estatus_membresia, [('ACTIVO', 'ACTIVO'), ('INACTIVO', 'INACTIVO')]),
               ('Nombramiento', 'nombramiento', 'text', persona.nombramiento, None),
-              ('Domicilio', 'domicilio', 'text', persona.domicilio, None),
-              ('Número', 'numero', 'text', persona.numero, None),
-              ('Localidad', 'localidad', 'text', persona.localidad, None),
-              ('Colonia', 'colonia', 'text', persona.colonia, None),
-              ('Municipio', 'municipio', 'text', persona.municipio, None),
-              ('C.P.', 'cp', 'text', persona.cp, None),
-              ('Teléfono 1', 'tel1', 'text', persona.tel1, None),
-              ('Teléfono 2', 'tel2', 'text', persona.tel2, None),
-              ('Correo electrónico', 'correo_electronico', 'email', persona.correo_electronico, None)
+              ('Domicilio (DP_CALLE)', 'domicilio', 'text', persona.domicilio, None),
+              ('Número exterior (DP_NUM_EXT)', 'numero', 'text', persona.numero, None),
+              ('Localidad (DP_LOCALIDAD)', 'localidad', 'text', persona.localidad, None),
+              ('Colonia (DP_COLONIA)', 'colonia', 'text', persona.colonia, None),
+              ('Municipio (DP_MUN_NOM)', 'municipio', 'text', persona.municipio, None),
+              ('C.P. (DP_CP)', 'cp', 'text', persona.cp, None),
+              ('Teléfono 1 (DP_TEL1)', 'tel1', 'text', persona.tel1, None),
+              ('Teléfono 2 (DP_TEL2)', 'tel2', 'text', persona.tel2, None),
+              ('Correo electrónico', 'correo_electronico', 'email', persona.correo_electronico, None),
+
+            
+              ('NUM', 'num', 'text', persona.num, None),
+              ('Número interior (DP_NUM_INT)', 'dp_num_int', 'text', persona.dp_num_int, None),
+              ('Cruce 1 (DP_CRUCE1)', 'dp_cruce1', 'text', persona.dp_cruce1, None),
+              ('Cruce 2 (DP_CRUCE2)', 'dp_cruce2', 'text', persona.dp_cruce2, None),
+
+              ('Escuela nombre', 'escuela_nombre', 'text', persona.escuela_nombre, None),
+              ('Turno', 'turno', 'text', persona.turno, None),
+              ('Nivel', 'nivel', 'text', persona.nivel, None),
+              ('Subsistema / modalidad', 'subs_modalidad', 'text', persona.subs_modalidad, None),
+              ('Zona escolar', 'zona_escolar', 'text', persona.zona_escolar, None),
+              ('Sector', 'sector', 'text', persona.sector, None),
+
+              ('DOM_ESC_CALLE', 'dom_esc_calle', 'text', persona.dom_esc_calle, None),
+              ('DOM_ESC_NUM_EXT', 'dom_esc_num_ext', 'text', persona.dom_esc_num_ext, None),
+              ('DOM_ESC_NUM_INT', 'dom_esc_num_int', 'text', persona.dom_esc_num_int, None),
+              ('DOM_ESC_CRUCE1', 'dom_esc_cruce1', 'text', persona.dom_esc_cruce1, None),
+              ('DOM_ESC_CRUCE2', 'dom_esc_cruce2', 'text', persona.dom_esc_cruce2, None),
+              ('DOM_ESC_LOCALIDAD', 'dom_esc_localidad', 'text', persona.dom_esc_localidad, None),
+              ('DOM_ESC_COLONIA', 'dom_esc_colonia', 'text', persona.dom_esc_colonia, None),
+              ('DOM_ESC_MUN_NOM', 'dom_esc_mun_nom', 'text', persona.dom_esc_mun_nom, None),
+              ('DOM_ESC_CP', 'dom_esc_cp', 'text', persona.dom_esc_cp, None),
+              ('DOM_ESC_COORDENADAS GPS', 'dom_esc_coordenadas_gps', 'text', persona.dom_esc_coordenadas_gps, None),
+
+              ('Estado', 'estado', 'text', persona.estado, None),
+              ('Sección SNTE', 'seccion_snte', 'text', persona.seccion_snte, None),
+              ('Del o CT', 'del_o_ct', 'text', persona.del_o_ct, None),
+              ('Org', 'org', 'text', persona.org, None),
+              ('Coordinación regional', 'coord_reg', 'text', persona.coord_reg, None),
+              ('Función sindical', 'fun_sin', 'text', persona.fun_sin, None),
             ] %}
               <div class="col-md-4">
                 <label class="form-label">{{ label }}</label>
@@ -176,15 +280,16 @@
                   </select>
                 {% elif name == 'curp' %}
                   <input type="text" name="curp" value="{{ value }}" class="form-control text-uppercase"
-                        pattern="^[A-Z]{4}\d{6}[HM][A-Z]{2}[A-Z]{3}[A-Z0-9]\d$"
-                        title="CURP inválido. Debe tener 18 caracteres, en mayúsculas."
-                        required>
+                        oninput="this.value=this.value.toUpperCase()"
+                        pattern="^[A-Z]{4}\d{6}[HM][A-Z]{5}[0-9A-Z]\d$"
+                        title="CURP inválido. Debe tener 18 caracteres, en mayúsculas." required>
+
 
                 {% elif name == 'rfc' %}
                   <input type="text" name="rfc" value="{{ value }}" class="form-control text-uppercase"
-                        pattern="^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$"
-                        title="RFC inválido. Debe tener 13 caracteres, en mayúsculas."
-                        required>
+                        oninput="this.value=this.value.toUpperCase()"
+                        pattern="^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{2,3}$"
+                        title="RFC inválido (12 o 13 caracteres, mayúsculas)." required>
 
 {% else %}
   <input type="{{ type }}" name="{{ name }}" value="{{ value }}" class="form-control">
@@ -206,7 +311,10 @@
 <div class="modal fade" id="modal-cambio-adscripcion" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
-      <form method="POST" action="{{ url_for('personal_bp.cambiar_adscripcion', id=persona.id) }}">
+      <form method="POST"
+            action="{{ url_for('personal_bp.editar_personal', id=persona.id) }}"
+            novalidate>   
+
         <div class="modal-header">
           <h5 class="modal-title">Cambio de adscripción</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

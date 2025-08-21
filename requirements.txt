@@ -7,14 +7,12 @@ Flask-SQLAlchemy
 email_validator
 gunicorn
 numpy
-opencv-python
 openpyxl
 pandas
 pillow
 psycopg2-binary
-PyMuPDF
 python-dotenv
+pytz
 reportlab
 SQLAlchemy
-tkcalendar
 Werkzeug
