@@ -3,7 +3,10 @@ from config import Config
 from extensiones import db, mail, login_manager
 from werkzeug.security import generate_password_hash
 from flask_login import current_user
+from flask_migrate import Migrate
 
+# ⬅️ Migrate como objeto global (sin pasar app todavía)
+migrate = Migrate()
 
 def ensure_admin(app):
     """Crea o promueve un admin por defecto si no existe ninguno."""
@@ -26,7 +29,7 @@ def ensure_admin(app):
             existente.rol = 'admin'
             existente.genero = existente.genero or genero
             existente.delegacion = existente.delegacion or deleg
-            if not existente.contraseña:
+            if not getattr(existente, "contraseña", None):
                 existente.contraseña = generate_password_hash(contrasena)
             db.session.commit()
             return
@@ -53,10 +56,16 @@ def create_app():
     login_manager.init_app(app)
     login_manager.login_view = 'auth_bp.login'
 
+    # 🔸 IMPORTANTE: asegurar que Alembic "vea" todos los modelos
+    with app.app_context():
+        import models  # importa tus modelos una vez cargada la app
+
+    # Inicializar Migrate ya con la app creada
+    migrate.init_app(app, db, compare_type=True, render_as_batch=True)
+
     @app.context_processor
     def inject_role_helpers():
         def has_role(*roles):
-            # roles: 'admin', 'coordinador', 'secretario', 'delegado'
             return getattr(current_user, "is_authenticated", False) and getattr(current_user, "rol", None) in roles
         return dict(has_role=has_role)
 
@@ -68,7 +77,6 @@ def create_app():
     from routes.accesos_routes import accesos_bp
     from routes.usuarios_routes import usuarios_bp
     from routes.notificacion_routes import notificacion_bp
-
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
@@ -88,10 +96,10 @@ def create_app():
         return "ok", 200
 
     return app
-# ⬇️ Solo se ejecuta si corres el archivo directamente
+
+# Ejecutable local (opcional)
 if __name__ == '__main__':
     import os
     app = create_app()
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=True, host='0.0.0.0', port=port)
-
