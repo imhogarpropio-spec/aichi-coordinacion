@@ -236,29 +236,6 @@
   let currentController = null;                       // aborta petición previa
   let __lastGoodPayload__ = { data: [], last_page: 1, total: 0 }; // cache del último payload válido
 
-  function normalizeAndStore(response, pageSize, buildColsCb){
-    let data = [], total = 0, last = 1;
-
-    if (response) {
-      if (Array.isArray(response.data)) {
-        data  = response.data;
-        total = typeof response.total === "number" ? response.total : data.length;
-        last  = Number(response.last_page) || Math.max(1, Math.ceil(total / pageSize));
-      } else if (Array.isArray(response)) {
-        data  = response;
-        total = data.length;
-        last  = Math.max(1, Math.ceil(total / pageSize));
-      }
-    }
-
-    if (!columnasConstruidas && data.length && typeof buildColsCb === "function"){
-      buildColsCb(data[0]);
-    }
-
-    __lastGoodPayload__ = { data, last_page: last, total };
-    return __lastGoodPayload__;
-  }
-
   const table = new Tabulator("#tabla-personal", {
     // Hacemos el fetch manual para poder abortar y manejar AbortError
     ajaxRequestFunc: function(url, config, params){
@@ -278,11 +255,11 @@
         return r.json();
       })
       .catch(err => {
-        // Si fue cancelación, responde con el último payload bueno (evita ruido en consola)
+        // Si fue cancelación, responde con el último payload bueno (evita ruido)
         if (err && err.name === "AbortError") {
           return __lastGoodPayload__;
         }
-        throw err; // otros errores sí se reportan
+        throw err;
       })
       .finally(() => { currentController = null; });
     },
@@ -298,23 +275,19 @@
     ajaxSorting: true,
     ajaxFiltering: true,
 
-    pagination: true,
-    paginationMode: "remote",
-    paginationSize: 100,
+    // 🔻 SIN paginación: una sola “página” con todo
+    pagination: false,
 
-    paginationDataReceived: { last_page: "last_page", data: "data" },
-    paginationDataSent: { page: "page", size: "size" },
-
+    // Pedimos TODO al backend (size grande) y sin 'page'
     ajaxURLGenerator: function(url, config, params){
-      const size = params.size || config.paginationSize || 100;
-      params.size = size;
+      delete params.page;
+      params.size = 100000; // ajusta si tu backend tiene límite
       if (!("excluir_baja_en_proceso" in params)) params.excluir_baja_en_proceso = 1;
       return url + "?" + new URLSearchParams(params).toString();
     },
 
+    // Normaliza la respuesta “plana” y construye columnas 1 sola vez
     ajaxResponse: function(url, params, response){
-      const size = (params && Number(params.size)) || (this.getPageSize?.() || 100);
-
       const buildColsOnce = (sample) => {
         const cols = buildColumns(sample);
         this.setColumns(cols);
@@ -322,8 +295,16 @@
         this.redraw(true);
       };
 
-      // Normaliza, guarda como “último bueno” y regresa a Tabulator
-      return normalizeAndStore(response, size, !columnasConstruidas ? buildColsOnce : null);
+      let data = [];
+      if (response) {
+        if (Array.isArray(response.data)) data = response.data;
+        else if (Array.isArray(response)) data = response;
+      }
+
+      if (!columnasConstruidas && data.length) buildColsOnce(data[0]);
+
+      __lastGoodPayload__ = { data, last_page: 1, total: data.length };
+      return __lastGoodPayload__;
     },
 
     ajaxError: function(url, params, xhr){
@@ -373,9 +354,6 @@
     },
   });
 
-  // ⚠️ Importante: quitamos el tableBuilt con setPageSize/setPage para no disparar otra carga
-  // (Ya definimos paginationSize: 100 en la configuración)
-
   // ====== RESUMEN ======
   async function cargarResumen(){
     try{
@@ -419,7 +397,7 @@
   document.getElementById("btn-recargar").addEventListener("click", () => {
     dirtyIds.clear();
     table.clearHistory?.();
-    table.replaceData();   // con AbortController ya no chocará con cargas en curso
+    table.replaceData();
     cargarResumen();
   });
 
@@ -542,6 +520,7 @@
     }catch(err){ console.error(err); alert("❌ Error al agregar observación:\n" + (err.message || err)); }
   });
 </script>
+
 
 
 {% endblock %}
