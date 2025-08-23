@@ -10,6 +10,7 @@ from sqlalchemy import func, not_
 from authz import roles_required, has_role
 from pytz import timezone
 import json
+from math import ceil
 
 
 
@@ -30,7 +31,9 @@ delegaciones_bp = Blueprint('delegaciones_bp', __name__)
 
 def _parse_tabulator_args(req):
     page = req.args.get("page", type=int) or 1
-    size = req.args.get("size", type=int) or 25
+    # default 100 y límite entre 1 y 500
+    size = req.args.get("size", type=int) or 100
+    size = max(1, min(size, 500))
 
     # sorters[n][field], sorters[n][dir]
     sorters = []
@@ -59,7 +62,6 @@ def _parse_tabulator_args(req):
         i += 1
 
     return page, size, sorters, filters
-
 
 
 def _alcance_delegaciones_query():
@@ -1182,23 +1184,13 @@ def tabla_personal_delegacion(delegacion_id):
 @login_required
 def api_listar_personal(delegacion_id):
     Delegacion.query.get_or_404(delegacion_id)
-
-    # 👇 Delegado: solo su propia delegación
     if current_user.rol == "delegado" and current_user.delegacion_id != delegacion_id:
-        from flask import abort
         abort(403)
 
-    page, size, sorters, filters = _parse_tabulator_args(request)
+    has_page = request.args.get("page") is not None
+    has_size = request.args.get("size") is not None
+    page, size, sorters, filters = _parse_tabulator_args(request) if (has_page or has_size) else (None, None, [], [])
 
-    # JOIN con Plantel para filtrar por delegación
-    query = (Personal.query
-             .join(Plantel, Personal.cct == Plantel.cct)
-             .filter(Plantel.delegacion_id == delegacion_id))
-    
-    
-
-    # Alias por compatibilidad (si algún día quisieras usarlos),
-    # pero OJO: el JSON que devolvemos abajo solo trae columnas REALES del modelo.
     ALIAS = {
         "puesto": Personal.funcion_coordinacion,
         "estatus": Personal.estatus_membresia,
@@ -1206,44 +1198,42 @@ def api_listar_personal(delegacion_id):
         "correo": Personal.correo_electronico,
     }
 
-    # ---- Filtros ----
+    q = (Personal.query
+         .join(Plantel, Personal.cct == Plantel.cct)
+         .filter(Plantel.delegacion_id == delegacion_id))
+
+    # filtros
     for f in filters:
-        field = (f or {}).get("field")
-        value = (f or {}).get("value")
-        if not field or value in (None, ""):
-            continue
+        field = (f or {}).get("field"); value = (f or {}).get("value")
+        if not field or value in (None, ""): continue
         col = getattr(Personal, field, None) or ALIAS.get(field)
-        if col is None:
-            continue
-        query = query.filter(col.ilike(f"%{value}%"))
+        if col is not None: q = q.filter(col.ilike(f"%{value}%"))
 
-    # ---- Orden ----
+    # orden
     for s in sorters:
-        field = (s or {}).get("field")
-        direction = (s or {}).get("dir", "asc")
+        field = (s or {}).get("field"); direction = (s or {}).get("dir", "asc")
         col = getattr(Personal, field, None) or ALIAS.get(field)
-        if col is None:
-            continue
-        query = query.order_by(col.asc() if direction == "asc" else col.desc())
+        if col is not None: q = q.order_by(col.asc() if direction == "asc" else col.desc())
 
-    total = query.count()
-    rows = query.offset((page - 1) * size).limit(size).all()
+    # paginación
+    if page is None or size is None:
+        rows = q.all()
+        total = len(rows)
+        last_page = 1
+    else:
+        total = q.count()
+        rows = q.offset((page - 1) * size).limit(size).all()
+        last_page = max(1, ceil(total / size))
 
-    # ✔️ Tomamos TODAS las columnas reales del modelo Personal automáticamente
-    PERSONAL_COLS = [c.name for c in Personal.__table__.columns]
-
-    def to_dict(p: Personal):
+    cols = [c.name for c in Personal.__table__.columns]
+    def to_dict(p): 
         d = {}
-        for col in PERSONAL_COLS:
-            v = getattr(p, col, None)
-            # serializar date/datetime
-            if hasattr(v, "isoformat"):
-                v = v.isoformat()
-            d[col] = v
+        for c in cols:
+            v = getattr(p, c, None)
+            d[c] = v.isoformat() if hasattr(v, "isoformat") else v
         return d
 
-    return jsonify({"data": [to_dict(r) for r in rows], "total": total})
-
+    return jsonify({"data": [to_dict(r) for r in rows], "total": total, "last_page": last_page})
 
 
 

@@ -148,7 +148,6 @@
   ];
 
   const bajaSolicitadaIds = new Set();
-
   function marcarFilaBajaSolicitada(row){
     try{
       const data = row.getData();
@@ -234,13 +233,73 @@
   const table = new Tabulator("#tabla-personal", {
     ajaxURL: AJAX_LIST_URL,
     ajaxParams: { excluir_baja_en_proceso: 1 },
+
     height:"70vh",
     layout:"fitDataStretch",
     columns: [],
+
     ajaxSorting: true,
     ajaxFiltering: true,
-    pagination: "remote",
-    paginationSize: 25,
+
+    pagination: true,
+    paginationMode: "remote",
+    paginationSize: 100,
+    /* 👇 Mapea explícitamente lo que envía el servidor */
+    paginationDataReceived: { last_page: "last_page", data: "data" },
+    paginationDataSent: { page: "page", size: "size" },
+
+    ajaxURLGenerator: function(url, config, params){
+      const size = params.size || config.paginationSize || 100;
+      params.size = size;
+      if (!("excluir_baja_en_proceso" in params)) params.excluir_baja_en_proceso = 1;
+      return url + "?" + new URLSearchParams(params).toString();
+    },
+
+    ajaxResponse: function(url, params, response){
+      // tamaño de página actual (para calcular last_page si falta)
+      const size = (params && Number(params.size)) || (this.getPageSize?.() || 100);
+
+      // Normaliza respuesta
+      let data = [];
+      let total = 0;
+      let last  = 1;
+
+      if (response) {
+        if (Array.isArray(response.data)) {
+          data  = response.data;
+          total = typeof response.total === "number" ? response.total : data.length;
+          last  = Number(response.last_page) || Math.max(1, Math.ceil(total / size));
+        } else if (Array.isArray(response)) {
+          // fallback si un día el backend devolviera array “puro”
+          data  = response;
+          total = data.length;
+          last  = Math.max(1, Math.ceil(total / size));
+        } else {
+          // objeto sin 'data' => evita undefined
+          data  = [];
+          total = 0;
+          last  = 1;
+        }
+      }
+
+      // Construir columnas solo una vez
+      if (!columnasConstruidas && data.length){
+        const cols = buildColumns(data[0]);
+        this.setColumns(cols);
+        columnasConstruidas = true;
+        this.redraw(true);
+      }
+
+      // ⛑️ DEVUELVE OBJETO (no array) para que Tabulator lea last_page y data
+      return { data, last_page: last, total };
+    },
+
+    ajaxError: function(url, params, xhr){
+      const msg = `AJAX ${xhr.status} ${xhr.statusText}\n` + (xhr.responseText ? xhr.responseText.slice(0, 500) : '');
+      console.error(msg);
+      alert(msg);
+    },
+
     placeholder: "Sin registros",
     selectable: 1,
     index: "id",
@@ -249,9 +308,7 @@
     persistenceID: "tabla-personal-v6-{{ delegacion.id }}",
 
     rowContextMenu: [
-      {
-        label: "➖ Solicitar baja",
-        action: (e, row) => {
+      { label: "➖ Solicitar baja", action: (e, row) => {
           const d = row.getData();
           const status = (d.estatus_membresia || "").toUpperCase();
           if (status === "BAJA"){ alert("La persona ya está en BAJA."); return; }
@@ -259,43 +316,35 @@
           abrirModalBaja(d, row);
         }
       },
-      {
-        label: "📝 Agregar observación",
-        action: (e, row) => { abrirModalObs(row.getData(), row); }
-      }
+      { label: "📝 Agregar observación", action: (e, row) => { abrirModalObs(row.getData(), row); } }
     ],
 
-    ajaxResponse(url, params, response){
-      if (!columnasConstruidas && response && Array.isArray(response.data) && response.data.length){
-        const cols = buildColumns(response.data[0]);
-        this.setColumns(cols);
-        columnasConstruidas = true;
-        this.redraw(true);
+    cellEdited: function(cell){
+      const row = cell.getRow();
+      const id = row.getData().id;
+      if (id != null){
+        dirtyIds.add(id);
+        row.getElement().style.backgroundColor = "rgba(255,193,7,.15)";
       }
-      this.setMaxPage(Math.ceil(response.total / this.getPageSize()));
-      return response.data;
     },
 
-    ajaxError(url, params, xhr){
-      const msg = `AJAX ${xhr.status} ${xhr.statusText}\n` + (xhr.responseText ? xhr.responseText.slice(0, 500) : '');
-      console.error(msg); alert(msg);
-    },
-
-    cellEdited(cell){
-      const row = cell.getRow(); const id = row.getData().id;
-      if (id != null){ dirtyIds.add(id); row.getElement().style.backgroundColor = "rgba(255,193,7,.15)"; }
-    },
-
-    rowFormatter(row){
-      const data = row.getData(); const id = data.id;
+    rowFormatter: function(row){
+      const data = row.getData();
+      const id = data.id;
       row.getElement().style.backgroundColor = dirtyIds.has(id) ? "rgba(255,193,7,.15)" : "";
       const status = (data.estatus_membresia || "").toUpperCase();
       if (status === "BAJA EN PROCESO" || bajaSolicitadaIds.has(Number(id))){
         row.getElement().classList.add("row-baja-solicitada");
-      }else{
+      } else {
         row.getElement().classList.remove("row-baja-solicitada");
       }
-    }
+    },
+  });
+
+  // ✅ Ajustes de paginación solo cuando la tabla ya está construida
+  table.on("tableBuilt", () => {
+    table.setPageSize(100);
+    table.setPage(1);
   });
 
   // ====== RESUMEN ======
@@ -337,8 +386,12 @@
   }
   cargarResumen();
 
+  // ===== Botones =====
   document.getElementById("btn-recargar").addEventListener("click", () => {
-    dirtyIds.clear(); table.clearHistory?.(); table.replaceData(); cargarResumen();
+    dirtyIds.clear();
+    table.clearHistory?.();
+    table.replaceData();
+    cargarResumen();
   });
 
   document.getElementById("btn-guardar").addEventListener("click", async () => {
@@ -346,32 +399,57 @@
       if (!puedeEditar) { alert("No tienes permisos para editar."); return; }
       let rowsToSave = [];
       if (typeof table.getEditedCells === "function") {
-        const editedCells = table.getEditedCells(); const byId = new Map();
-        for (const cell of editedCells) { const data = cell.getRow().getData(); byId.set(data.id, data); }
+        const editedCells = table.getEditedCells();
+        const byId = new Map();
+        for (const cell of editedCells) {
+          const data = cell.getRow().getData();
+          byId.set(data.id, data);
+        }
         rowsToSave = Array.from(byId.values());
       }
       if ((!rowsToSave || rowsToSave.length === 0) && typeof table.getRows === "function") {
         const rows = table.getRows();
-        rowsToSave = rows.filter(r => (typeof r.getUpdateHistory === "function") && (r.getUpdateHistory() || []).length > 0).map(r => r.getData());
+        rowsToSave = rows
+          .filter(r => (typeof r.getUpdateHistory === "function") && (r.getUpdateHistory() || []).length > 0)
+          .map(r => r.getData());
       }
-      if (!rowsToSave || rowsToSave.length === 0) { alert("No hay cambios por guardar."); return; }
+      if (!rowsToSave || rowsToSave.length === 0) {
+        alert("No hay cambios por guardar.");
+        return;
+      }
       rowsToSave = rowsToSave.map(r => { if (r && typeof r.id !== "number") r.id = Number(r.id); return r; });
 
-      const resp = await fetch(AJAX_SAVE_URL, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ rows: rowsToSave }) });
+      const resp = await fetch(AJAX_SAVE_URL, {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ rows: rowsToSave })
+      });
       if (!resp.ok) { const txt = await resp.text(); throw new Error(`HTTP ${resp.status} - ${txt}`); }
 
       const data = await resp.json();
       alert(`Cambios guardados: ${data.actualizados} registro(s).`);
-      table.clearHistory?.(); dirtyIds.clear(); table.replaceData(); cargarResumen();
-    }catch(err){ console.error(err); alert(`Error al guardar:\n${err.message || err}`); }
+      table.clearHistory?.();
+      dirtyIds.clear();
+      table.replaceData();
+      cargarResumen();
+    }catch(err){
+      console.error(err);
+      alert(`Error al guardar:\n${err.message || err}`);
+    }
   });
 
   document.getElementById("btn-excel").addEventListener("click", () => {
     const url = new URL(AJAX_EXPORT_URL, window.location.origin);
     const sorters = (typeof table.getSorters === "function") ? table.getSorters() : [];
-    sorters.forEach((s, i) => { url.searchParams.set(`sorter[${i}][field]`, s.field); url.searchParams.set(`sorter[${i}][dir]`, s.dir); });
+    sorters.forEach((s, i) => {
+      url.searchParams.set(`sorter[${i}][field]`, s.field);
+      url.searchParams.set(`sorter[${i}][dir]`, s.dir);
+    });
     const filters = (typeof table.getFilters === "function") ? table.getFilters() : [];
-    filters.forEach((f, i) => { url.searchParams.set(`filter[${i}][field]`, f.field); url.searchParams.set(`filter[${i}][value]`, f.value); });
+    filters.forEach((f, i) => {
+      url.searchParams.set(`filter[${i}][field]`, f.field);
+      url.searchParams.set(`filter[${i}][value]`, f.value);
+    });
     url.searchParams.set("excluir_baja_en_proceso", "1");
     window.location = url.toString();
   });
