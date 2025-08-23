@@ -230,7 +230,31 @@
     return cols;
   }
 
+  // 🔒 Abort de cargas previas si llega una nueva
+  let currentController = null;
+
   const table = new Tabulator("#tabla-personal", {
+    // hacemos el fetch manual para poder abortar
+    ajaxRequestFunc: function(url, config, params){
+      if (currentController) currentController.abort();
+      currentController = new AbortController();
+
+      const qs = new URLSearchParams(params).toString();
+      const full = qs ? `${url}?${qs}` : url;
+
+      return fetch(full, {
+        signal: currentController.signal,
+        credentials: "include",
+        headers: { "Accept": "application/json" },
+      })
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .finally(() => { currentController = null; });
+    },
+
+    // ruta base (Tabulator usa esto para armar params; ajaxRequestFunc hará la petición real)
     ajaxURL: AJAX_LIST_URL,
     ajaxParams: { excluir_baja_en_proceso: 1 },
 
@@ -244,10 +268,12 @@
     pagination: true,
     paginationMode: "remote",
     paginationSize: 100,
-    /* 👇 Mapea explícitamente lo que envía el servidor */
+
+    // mapeo explícito de nombres
     paginationDataReceived: { last_page: "last_page", data: "data" },
     paginationDataSent: { page: "page", size: "size" },
 
+    // fuerza 'size' y el flag de excluir bajas
     ajaxURLGenerator: function(url, config, params){
       const size = params.size || config.paginationSize || 100;
       params.size = size;
@@ -255,11 +281,10 @@
       return url + "?" + new URLSearchParams(params).toString();
     },
 
+    // normaliza respuesta y construye columnas 1 sola vez
     ajaxResponse: function(url, params, response){
-      // tamaño de página actual (para calcular last_page si falta)
       const size = (params && Number(params.size)) || (this.getPageSize?.() || 100);
 
-      // Normaliza respuesta
       let data = [];
       let total = 0;
       let last  = 1;
@@ -270,19 +295,16 @@
           total = typeof response.total === "number" ? response.total : data.length;
           last  = Number(response.last_page) || Math.max(1, Math.ceil(total / size));
         } else if (Array.isArray(response)) {
-          // fallback si un día el backend devolviera array “puro”
           data  = response;
           total = data.length;
           last  = Math.max(1, Math.ceil(total / size));
         } else {
-          // objeto sin 'data' => evita undefined
           data  = [];
           total = 0;
           last  = 1;
         }
       }
 
-      // Construir columnas solo una vez
       if (!columnasConstruidas && data.length){
         const cols = buildColumns(data[0]);
         this.setColumns(cols);
@@ -290,7 +312,6 @@
         this.redraw(true);
       }
 
-      // ⛑️ DEVUELVE OBJETO (no array) para que Tabulator lea last_page y data
       return { data, last_page: last, total };
     },
 
@@ -341,7 +362,7 @@
     },
   });
 
-  // ✅ Ajustes de paginación solo cuando la tabla ya está construida
+  // ✅ Ajustes de paginación cuando la tabla ya está construida (esto también dispara carga)
   table.on("tableBuilt", () => {
     table.setPageSize(100);
     table.setPage(1);
@@ -390,7 +411,7 @@
   document.getElementById("btn-recargar").addEventListener("click", () => {
     dirtyIds.clear();
     table.clearHistory?.();
-    table.replaceData();
+    table.replaceData();   // con AbortController ya no choca con cargas en curso
     cargarResumen();
   });
 
@@ -504,7 +525,7 @@
       const resp = await fetch(makeObsUrl(personaId), {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
-        // ⬇️ El endpoint espera 'texto'; también enviamos 'observacion' por compatibilidad
+        // compatibilidad con endpoints que aceptan 'texto' u 'observacion'
         body: new URLSearchParams({ texto: texto, observacion: texto }).toString()
       });
       if(!resp.ok){ const txt = await resp.text(); throw new Error(`HTTP ${resp.status} - ${txt.slice(0,300)}`); }
