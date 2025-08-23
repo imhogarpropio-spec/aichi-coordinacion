@@ -230,11 +230,37 @@
     return cols;
   }
 
-  // 🔒 Abort de cargas previas si llega una nueva
-  let currentController = null;
+  // =======================
+  //  Control de cargas
+  // =======================
+  let currentController = null;                       // aborta petición previa
+  let __lastGoodPayload__ = { data: [], last_page: 1, total: 0 }; // cache del último payload válido
+
+  function normalizeAndStore(response, pageSize, buildColsCb){
+    let data = [], total = 0, last = 1;
+
+    if (response) {
+      if (Array.isArray(response.data)) {
+        data  = response.data;
+        total = typeof response.total === "number" ? response.total : data.length;
+        last  = Number(response.last_page) || Math.max(1, Math.ceil(total / pageSize));
+      } else if (Array.isArray(response)) {
+        data  = response;
+        total = data.length;
+        last  = Math.max(1, Math.ceil(total / pageSize));
+      }
+    }
+
+    if (!columnasConstruidas && data.length && typeof buildColsCb === "function"){
+      buildColsCb(data[0]);
+    }
+
+    __lastGoodPayload__ = { data, last_page: last, total };
+    return __lastGoodPayload__;
+  }
 
   const table = new Tabulator("#tabla-personal", {
-    // hacemos el fetch manual para poder abortar
+    // Hacemos el fetch manual para poder abortar y manejar AbortError
     ajaxRequestFunc: function(url, config, params){
       if (currentController) currentController.abort();
       currentController = new AbortController();
@@ -251,10 +277,17 @@
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
+      .catch(err => {
+        // Si fue cancelación, responde con el último payload bueno (evita ruido en consola)
+        if (err && err.name === "AbortError") {
+          return __lastGoodPayload__;
+        }
+        throw err; // otros errores sí se reportan
+      })
       .finally(() => { currentController = null; });
     },
 
-    // ruta base (Tabulator usa esto para armar params; ajaxRequestFunc hará la petición real)
+    // ruta base para que Tabulator construya los params (la petición real la hace ajaxRequestFunc)
     ajaxURL: AJAX_LIST_URL,
     ajaxParams: { excluir_baja_en_proceso: 1 },
 
@@ -269,11 +302,9 @@
     paginationMode: "remote",
     paginationSize: 100,
 
-    // mapeo explícito de nombres
     paginationDataReceived: { last_page: "last_page", data: "data" },
     paginationDataSent: { page: "page", size: "size" },
 
-    // fuerza 'size' y el flag de excluir bajas
     ajaxURLGenerator: function(url, config, params){
       const size = params.size || config.paginationSize || 100;
       params.size = size;
@@ -281,42 +312,22 @@
       return url + "?" + new URLSearchParams(params).toString();
     },
 
-    // normaliza respuesta y construye columnas 1 sola vez
     ajaxResponse: function(url, params, response){
       const size = (params && Number(params.size)) || (this.getPageSize?.() || 100);
 
-      let data = [];
-      let total = 0;
-      let last  = 1;
-
-      if (response) {
-        if (Array.isArray(response.data)) {
-          data  = response.data;
-          total = typeof response.total === "number" ? response.total : data.length;
-          last  = Number(response.last_page) || Math.max(1, Math.ceil(total / size));
-        } else if (Array.isArray(response)) {
-          data  = response;
-          total = data.length;
-          last  = Math.max(1, Math.ceil(total / size));
-        } else {
-          data  = [];
-          total = 0;
-          last  = 1;
-        }
-      }
-
-      if (!columnasConstruidas && data.length){
-        const cols = buildColumns(data[0]);
+      const buildColsOnce = (sample) => {
+        const cols = buildColumns(sample);
         this.setColumns(cols);
         columnasConstruidas = true;
         this.redraw(true);
-      }
+      };
 
-      return { data, last_page: last, total };
+      // Normaliza, guarda como “último bueno” y regresa a Tabulator
+      return normalizeAndStore(response, size, !columnasConstruidas ? buildColsOnce : null);
     },
 
     ajaxError: function(url, params, xhr){
-      const msg = `AJAX ${xhr.status} ${xhr.statusText}\n` + (xhr.responseText ? xhr.responseText.slice(0, 500) : '');
+      const msg = `AJAX ${xhr?.status || ""} ${xhr?.statusText || ""}`;
       console.error(msg);
       alert(msg);
     },
@@ -362,11 +373,8 @@
     },
   });
 
-  // ✅ Ajustes de paginación cuando la tabla ya está construida (esto también dispara carga)
-  table.on("tableBuilt", () => {
-    table.setPageSize(100);
-    table.setPage(1);
-  });
+  // ⚠️ Importante: quitamos el tableBuilt con setPageSize/setPage para no disparar otra carga
+  // (Ya definimos paginationSize: 100 en la configuración)
 
   // ====== RESUMEN ======
   async function cargarResumen(){
@@ -411,7 +419,7 @@
   document.getElementById("btn-recargar").addEventListener("click", () => {
     dirtyIds.clear();
     table.clearHistory?.();
-    table.replaceData();   // con AbortController ya no choca con cargas en curso
+    table.replaceData();   // con AbortController ya no chocará con cargas en curso
     cargarResumen();
   });
 
@@ -534,5 +542,6 @@
     }catch(err){ console.error(err); alert("❌ Error al agregar observación:\n" + (err.message || err)); }
   });
 </script>
+
 
 {% endblock %}
