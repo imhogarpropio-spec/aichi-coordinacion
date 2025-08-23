@@ -140,8 +140,8 @@
   const AJAX_SAVE_URL    = root.dataset.ajaxSaveUrl;
   const AJAX_EXPORT_URL  = root.dataset.ajaxExportUrl;
   const AJAX_SUMMARY_URL = root.dataset.ajaxSummaryUrl;
-  const BAJA_URL_TPL     = root.dataset.bajaUrlTpl;    // "/personal/solicitar_baja/0"
-  const OBS_URL_TPL      = root.dataset.observUrlTpl;  // "/personal/agregar_observacion/0"
+  const BAJA_URL_TPL     = root.dataset.bajaUrlTpl;
+  const OBS_URL_TPL      = root.dataset.observUrlTpl;
 
   const FUNC_COORD_OPCIONES = [
     "DIRECTOR (A)","DOCENTE","ADMINISTRATIVO (A)","PREFECTO (A)","INTENDENCIA"
@@ -233,8 +233,8 @@
   // =======================
   //  Control de cargas
   // =======================
-  let currentController = null;                       // aborta petición previa
-  let __lastGoodPayload__ = { data: [], last_page: 1, total: 0 }; // cache del último payload válido
+  let currentController = null;        // aborta petición previa
+  let __lastGoodRows__ = [];           // cache de la última lista de filas válida (ARRAY)
 
   const table = new Tabulator("#tabla-personal", {
     // Hacemos el fetch manual para poder abortar y manejar AbortError
@@ -255,9 +255,9 @@
         return r.json();
       })
       .catch(err => {
-        // Si fue cancelación, responde con el último payload bueno (evita ruido)
+        // Si fue cancelación, regresamos el último ARRAY válido
         if (err && err.name === "AbortError") {
-          return __lastGoodPayload__;
+          return __lastGoodRows__;
         }
         throw err;
       })
@@ -286,25 +286,24 @@
       return url + "?" + new URLSearchParams(params).toString();
     },
 
-    // Normaliza la respuesta “plana” y construye columnas 1 sola vez
+    // Normaliza la respuesta y devuelve **ARRAY** a Tabulator
     ajaxResponse: function(url, params, response){
-      const buildColsOnce = (sample) => {
-        const cols = buildColumns(sample);
+      // 'response' puede ser {data:[...]} o directamente [...]
+      let rows = [];
+      if (response) {
+        if (Array.isArray(response)) rows = response;
+        else if (Array.isArray(response.data)) rows = response.data;
+      }
+
+      if (!columnasConstruidas && rows.length){
+        const cols = buildColumns(rows[0]);
         this.setColumns(cols);
         columnasConstruidas = true;
         this.redraw(true);
-      };
-
-      let data = [];
-      if (response) {
-        if (Array.isArray(response.data)) data = response.data;
-        else if (Array.isArray(response)) data = response;
       }
 
-      if (!columnasConstruidas && data.length) buildColsOnce(data[0]);
-
-      __lastGoodPayload__ = { data, last_page: 1, total: data.length };
-      return __lastGoodPayload__;
+      __lastGoodRows__ = rows;   // cachea el último array válido
+      return rows;               // 👈 Tabulator espera un ARRAY aquí
     },
 
     ajaxError: function(url, params, xhr){
@@ -397,7 +396,7 @@
   document.getElementById("btn-recargar").addEventListener("click", () => {
     dirtyIds.clear();
     table.clearHistory?.();
-    table.replaceData();
+    table.replaceData();   // con AbortController no choca con cargas en curso
     cargarResumen();
   });
 
@@ -511,7 +510,6 @@
       const resp = await fetch(makeObsUrl(personaId), {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
-        // compatibilidad con endpoints que aceptan 'texto' u 'observacion'
         body: new URLSearchParams({ texto: texto, observacion: texto }).toString()
       });
       if(!resp.ok){ const txt = await resp.text(); throw new Error(`HTTP ${resp.status} - ${txt.slice(0,300)}`); }
@@ -520,7 +518,5 @@
     }catch(err){ console.error(err); alert("❌ Error al agregar observación:\n" + (err.message || err)); }
   });
 </script>
-
-
 
 {% endblock %}
