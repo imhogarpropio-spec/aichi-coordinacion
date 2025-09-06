@@ -131,6 +131,17 @@
   .tabulator .tabulator-row.row-baja-solicitada .tabulator-cell{ background:#fff3cd !important; }
   .tabulator .tabulator-row.row-baja-solicitada{ box-shadow: inset 4px 0 0 #ffc107 !important; }
   .tabulator-menu{ z-index:1080 !important; }
+
+  #tabla-personal .tabulator-group:not(.tabulator-group-visible) { margin-left: 0; }
+
+   /* Oculta headers de grupo vacíos */
+  #tabla-personal .tabulator-group .tabulator-group-header:empty { display:none; }
+
+  /* Quita sangría de filas cuando el header está vacío */
+  #tabla-personal .tabulator-group .tabulator-group-header:empty + .tabulator-tableholder .tabulator-row {
+    margin-left: 0;
+  }
+
 </style>
 
 <script>
@@ -192,6 +203,7 @@
     "estado","seccion_snte","del_o_ct","org","coord_reg","fun_sin","updated_at","id"
   ];
 
+  let curpCounts = {};
   const HIDE_FIELDS = new Set(["num"]);
   const dirtyIds = new Set();
   let columnasConstruidas = false;
@@ -235,6 +247,8 @@
   // =======================
   let currentController = null;        // aborta petición previa
   let __lastGoodRows__ = [];           // cache de la última lista de filas válida (ARRAY)
+
+  
 
   const table = new Tabulator("#tabla-personal", {
     // Hacemos el fetch manual para poder abortar y manejar AbortError
@@ -295,6 +309,7 @@
         else if (Array.isArray(response.data)) rows = response.data;
       }
 
+      // Construcción de columnas (igual que antes)
       if (!columnasConstruidas && rows.length){
         const cols = buildColumns(rows[0]);
         this.setColumns(cols);
@@ -302,9 +317,27 @@
         this.redraw(true);
       }
 
+      // 🔸 Conteo por CURP
+      curpCounts = rows.reduce((acc, r) => {
+        const k = (r.curp || "").toUpperCase();
+        if (!k) return acc;
+        acc[k] = (acc[k] || 0) + 1;
+        return acc;
+      }, {});
+
+      const hayMulti = Object.values(curpCounts).some(n => n > 1);
+
+      // 🔸 Activa/Desactiva agrupado dinámicamente
+      if (hayMulti) {
+        this.setGroupBy(["curp"]);
+      } else {
+        this.setGroupBy([]); 
+      }
+
       __lastGoodRows__ = rows;   // cachea el último array válido
-      return rows;               // 👈 Tabulator espera un ARRAY aquí
+      return rows;               // Tabulator espera un ARRAY
     },
+
 
     ajaxError: function(url, params, xhr){
       const msg = `AJAX ${xhr?.status || ""} ${xhr?.statusText || ""}`;
@@ -351,6 +384,16 @@
         row.getElement().classList.remove("row-baja-solicitada");
       }
     },
+
+    groupStartOpen: true,  // que abra los grupos por defecto
+    groupHeader: function(value, count, data){
+      // Muestra encabezado solo si ese CURP tiene 2+ claves
+      const isMulti = (curpCounts[(value || "").toUpperCase()] || 0) > 1;
+      if (!isMulti) return ''; // sin encabezado visible para grupos de 1
+      const nombre = data?.[0]?.nombre_completo ?? "";
+      return `${nombre} — CURP: ${value} <span class="text-muted">(${count} claves)</span>`;
+    },
+
   });
 
   // ====== RESUMEN ======

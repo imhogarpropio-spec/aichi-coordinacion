@@ -83,6 +83,7 @@ class Plantel(db.Model):
 
 class Personal(db.Model):
     __tablename__ = 'personal'
+    __table_args__ = (db.UniqueConstraint('curp', 'clave_presupuestal', name='uq_curp_clave'),)
 
     id = db.Column(db.Integer, primary_key=True)
 

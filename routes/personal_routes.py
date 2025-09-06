@@ -475,11 +475,20 @@ def subir_excel_personal(cct):
                 bad += 1; errores.append(f"Fila {i+2}: CCT {dest['cct']} no existe en plantel.")
                 continue
 
-            # UPSERT por CURP
-            p = Personal.query.filter_by(curp=curp_val).first()
+            # UPSERT por CURP + CLAVE (multi-plaza)
+            clave_val = (dest.get("clave_presupuestal") or "").strip().upper()
+            dest["clave_presupuestal"] = clave_val  # normaliza también en el destino
+
+            q = Personal.query.filter_by(curp=curp_val)
+            if clave_val:
+                q = q.filter_by(clave_presupuestal=clave_val)
+
+            p = q.first()
             if not p:
-                p = Personal(curp=curp_val)
+                # Crea nuevo registro por combinación curp+clave
+                p = Personal(curp=curp_val, clave_presupuestal=clave_val)
                 db.session.add(p)
+
 
             # Asignar campos existentes
             for k, v in dest.items():
@@ -721,7 +730,8 @@ def agregar_personal_manual(cct):
         return re.fullmatch(r'^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$', rfc)
 
     curp = request.form.get('curp', '').strip().upper()
-    rfc = request.form.get('rfc', '').strip().upper()
+    rfc  = request.form.get('rfc', '').strip().upper()
+    clave = request.form.get('clave_presupuestal', '').strip().upper()  # 👈 NUEVO
 
     if not validar_curp(curp):
         flash("⚠️ CURP inválido. Verifica el formato (18 caracteres, en mayúsculas).", "danger")
@@ -731,16 +741,32 @@ def agregar_personal_manual(cct):
         flash("⚠️ RFC inválido. Verifica el formato (13 caracteres, en mayúsculas).", "danger")
         return redirect(url_for('personal_bp.vista_personal', delegacion=plantel.delegacion.nombre, cct=cct))
 
-    existe_curp = Personal.query.filter_by(curp=curp).first()
-    existe_rfc = Personal.query.filter_by(rfc=rfc).first()
-
-    if existe_curp:
-        flash(f"❌ El CURP ya está registrado para: {existe_curp.nombre} {existe_curp.apellido_paterno} {existe_curp.apellido_materno} en el CCT {existe_curp.cct}.", "danger")
+    if not clave:
+        flash("⚠️ La clave presupuestal es obligatoria.", "danger")
         return redirect(url_for('personal_bp.vista_personal', delegacion=plantel.delegacion.nombre, cct=cct))
 
-    if existe_rfc:
-        flash(f"❌ El RFC ya está registrado para: {existe_rfc.nombre} {existe_rfc.apellido_paterno} {existe_rfc.apellido_materno} en el CCT {existe_rfc.cct}.", "danger")
+    # 👇 DUPLICADO por CURP + CLAVE (multi-plaza correcto)
+    existe_curp_clave = Personal.query.filter_by(curp=curp, clave_presupuestal=clave).first()
+    if existe_curp_clave:
+        flash(
+            f"❌ Ya existe este CURP con la clave {clave} para: "
+            f"{existe_curp_clave.nombre} {existe_curp_clave.apellido_paterno} {existe_curp_clave.apellido_materno} "
+            f"en el CCT {existe_curp_clave.cct}.",
+            "danger"
+        )
         return redirect(url_for('personal_bp.vista_personal', delegacion=plantel.delegacion.nombre, cct=cct))
+
+    # 👇 RFC: permite mismo RFC si es la misma persona (misma CURP), pero bloquea si es otra persona
+    existe_rfc_otro = Personal.query.filter(Personal.rfc == rfc, Personal.curp != curp).first()
+    if existe_rfc_otro:
+        flash(
+            f"❌ El RFC ya está registrado para: "
+            f"{existe_rfc_otro.nombre} {existe_rfc_otro.apellido_paterno} {existe_rfc_otro.apellido_materno} "
+            f"en el CCT {existe_rfc_otro.cct}.",
+            "danger"
+        )
+        return redirect(url_for('personal_bp.vista_personal', delegacion=plantel.delegacion.nombre, cct=cct))
+
 
     def convertir_fecha(campo):
         valor = request.form.get(campo)
