@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 from datetime import timedelta
 
-load_dotenv(dotenv_path=Path('aichi.env'))
+load_dotenv(Path(__file__).with_name(".env"))
 
 class Config:
     SECRET_KEY = os.getenv("SECRET_KEY")
