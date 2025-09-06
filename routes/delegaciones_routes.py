@@ -341,7 +341,7 @@ def vista_delegaciones():
     niveles_disponibles = [
         'PREESCOLAR GENERAL', 'PRIMARIA GENERAL', 'SECUNDARIA GENERAL',
         'SECUNDARIAS TÉCNICAS', 'TELESECUNDARIAS', 'NIVELES ESPECIALES',
-        'MEDIA SUPERIOR', 'JUBILADOS'
+        'MEDIA SUPERIOR', 'JUBILADOS', 'EDUCACIÓN ARTÍSTICA'
     ]
     return render_template('consulta_delegaciones.html',
                            niveles=niveles,
