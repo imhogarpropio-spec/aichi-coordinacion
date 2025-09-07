@@ -150,7 +150,12 @@
         <div class="card-actions">
           {% if has_role('admin', 'coordinador') %}
             <button class="btn btn-outline-success btn-sm me-1" data-bs-toggle="modal" data-bs-target="#modal-{{ cct.id }}" title="Editar">✏️</button>
-            <a href="{{ url_for('delegaciones_bp.eliminar_cct', id=cct.id) }}" class="btn btn-outline-danger btn-sm" onclick="return confirm('¿Eliminar este CCT?')">🗑️</a>
+            <form method="POST"
+                  action="{{ url_for('delegaciones_bp.eliminar_cct', id=cct.id) }}"
+                  class="d-inline"
+                  onsubmit="return confirm('¿Eliminar este CCT?')">
+              <button type="submit" class="btn btn-outline-danger btn-sm">🗑️</button>
+            </form>
           {% endif %}
         </div>
       </div>
