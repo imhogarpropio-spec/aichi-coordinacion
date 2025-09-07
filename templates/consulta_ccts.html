@@ -171,23 +171,23 @@
           </div>
           <div class="modal-body">
             <div class="row g-2">
-              <div class="col-md-6"><input type="text" name="nuevo_nombre" value="{{ cct.nombre }}" class="form-control" required></div>
-              <div class="col-md-6"><input type="text" name="nuevo_cct" value="{{ cct.cct }}" class="form-control" required></div>
-              <div class="col-md-4"><input type="text" name="nuevo_turno" value="{{ cct.turno }}" class="form-control"></div>
-              <div class="col-md-4"><input type="text" name="nuevo_nivel" value="{{ cct.nivel }}" class="form-control"></div>
-              <div class="col-md-4"><input type="text" name="nuevo_modalidad" value="{{ cct.modalidad }}" class="form-control"></div>
-              <div class="col-md-6"><input type="text" name="nuevo_zona_escolar" value="{{ cct.zona_escolar }}" class="form-control"></div>
-              <div class="col-md-6"><input type="text" name="nuevo_sector" value="{{ cct.sector }}" class="form-control"></div>
-              <div class="col-md-4"><input type="text" name="nuevo_calle" value="{{ cct.calle }}" class="form-control"></div>
-              <div class="col-md-4"><input type="text" name="nuevo_num_exterior" value="{{ cct.num_exterior }}" class="form-control"></div>
-              <div class="col-md-4"><input type="text" name="nuevo_num_interior" value="{{ cct.num_interior }}" class="form-control"></div>
-              <div class="col-md-6"><input type="text" name="nuevo_cruce_1" value="{{ cct.cruce_1 }}" class="form-control"></div>
-              <div class="col-md-6"><input type="text" name="nuevo_cruce_2" value="{{ cct.cruce_2 }}" class="form-control"></div>
-              <div class="col-md-4"><input type="text" name="nuevo_localidad" value="{{ cct.localidad }}" class="form-control"></div>
-              <div class="col-md-4"><input type="text" name="nuevo_colonia" value="{{ cct.colonia }}" class="form-control"></div>
-              <div class="col-md-4"><input type="text" name="nuevo_municipio" value="{{ cct.municipio }}" class="form-control"></div>
-              <div class="col-md-4"><input type="text" name="nuevo_cp" value="{{ cct.cp }}" class="form-control"></div>
-              <div class="col-md-8"><input type="text" name="nuevo_coordenadas_gps" value="{{ cct.coordenadas_gps }}" class="form-control"></div>
+              <div class="col-md-6"><input type="text" name="nuevo_nombre" value="{{ cct.nombre|default('', true) }}" placeholder="Nombre del plantel" class="form-control" required></div>
+              <div class="col-md-6"><input type="text" name="nuevo_cct" value="{{ cct.cct|default('', true) }}" placeholder="CCT" class="form-control" required></div>
+              <div class="col-md-4"><input type="text" name="nuevo_turno" value="{{ cct.turno|default('', true) }}" placeholder="Turno" class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_nivel" value="{{ cct.nivel|default('', true) }}" placeholder="Nivel" class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_modalidad" value="{{ cct.modalidad|default('', true) }}" placeholder="Modalidad" class="form-control"></div>
+              <div class="col-md-6"><input type="text" name="nuevo_zona_escolar" value="{{ cct.zona_escolar|default('', true) }}" placeholder="Zona escolar" class="form-control"></div>
+              <div class="col-md-6"><input type="text" name="nuevo_sector" value="{{ cct.sector|default('', true) }}" placeholder="Sector" class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_calle" value="{{ cct.calle|default('', true) }}" placeholder="Calle" class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_num_exterior" value="{{ cct.num_exterior|default('', true) }}" placeholder="No. Ext." class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_num_interior" value="{{ cct.num_interior|default('', true) }}" placeholder="No. Int." class="form-control"></div>
+              <div class="col-md-6"><input type="text" name="nuevo_cruce_1" value="{{ cct.cruce_1|default('', true) }}" placeholder="Cruce 1" class="form-control"></div>
+              <div class="col-md-6"><input type="text" name="nuevo_cruce_2" value="{{ cct.cruce_2|default('', true) }}" placeholder="Cruce 2" class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_localidad" value="{{ cct.localidad|default('', true) }}" placeholder="Localidad" class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_colonia" value="{{ cct.colonia|default('', true) }}" placeholder="Colonia" class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_municipio" value="{{ cct.municipio|default('', true) }}" placeholder="Municipio" class="form-control"></div>
+              <div class="col-md-4"><input type="text" name="nuevo_cp" value="{{ cct.cp|default('', true) }}" placeholder="C.P." class="form-control"></div>
+              <div class="col-md-8"><input type="text" name="nuevo_coordenadas_gps" value="{{ cct.coordenadas_gps|default('', true) }}" placeholder="Coordenadas GPS" class="form-control"></div>
             </div>
           </div>
           <div class="modal-footer">
