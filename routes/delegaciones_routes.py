@@ -29,6 +29,17 @@ from reportlab.lib.units import cm
 
 delegaciones_bp = Blueprint('delegaciones_bp', __name__)
 
+def _norm(s: str) -> str:
+    return (s or "").strip()
+
+def _norm_nombre(s: str) -> str:
+    """Normaliza el 'nombre' de la delegación: trim, MAYÚSCULAS, guiones Unicode → '-', colapsa espacios."""
+    s = (s or "").strip().upper()
+    s = s.translate(str.maketrans({"–": "-", "—": "-"}))
+    import re
+    s = re.sub(r"\s+", " ", s)
+    return s
+
 def _parse_tabulator_args(req):
     page = req.args.get("page", type=int) or 1
     # default 100 y límite entre 1 y 500
@@ -336,12 +347,12 @@ def vista_delegaciones():
     # Agrupar por nivel (como ya lo tenías)
     niveles = {}
     for d in delegaciones:
-        niveles.setdefault(d.nivel, []).append(d)
+        niveles.setdefault(d.nivel or "SIN NIVEL", []).append(d)
 
     niveles_disponibles = [
         'PREESCOLAR GENERAL', 'PRIMARIA GENERAL', 'SECUNDARIA GENERAL',
         'SECUNDARIAS TÉCNICAS', 'TELESECUNDARIAS', 'NIVELES ESPECIALES',
-        'MEDIA SUPERIOR', 'JUBILADOS', 'EDUCACIÓN ARTÍSTICA'
+        'MEDIA SUPERIOR', 'JUBILADOS', 'EDUCACIÓN ARTÍSTICA', 'EDUCACIÓN FÍSICA'
     ]
     return render_template('consulta_delegaciones.html',
                            niveles=niveles,
@@ -382,16 +393,28 @@ def eliminar_delegacion(id):
 @roles_required('admin', 'coordinador')
 def editar_delegacion(id):
     deleg = Delegacion.query.get_or_404(id)
-    deleg.nombre = request.form['nuevo_nombre']
-    deleg.nivel = request.form['nuevo_nivel']
-    deleg.delegado = request.form['nuevo_delegado']
-    db.session.commit()
-    registrar_notificacion(
-        f"{current_user.nombre} actualizó la delegación '{deleg.nombre}' (nivel {deleg.nivel})",
-        tipo="delegacion"
-    )
-    flash("Delegación actualizada correctamente.", "success")
+
+    nuevo_nombre   = _norm_nombre(request.form.get('nuevo_nombre'))
+    nuevo_nivel    = _norm(request.form.get('nuevo_nivel'))
+    nuevo_delegado = _norm(request.form.get('nuevo_delegado'))
+
+    deleg.nombre   = nuevo_nombre or deleg.nombre
+    deleg.nivel    = nuevo_nivel or deleg.nivel
+    deleg.delegado = (nuevo_delegado or None)
+
+    try:
+        db.session.commit()
+        registrar_notificacion(
+            f"{current_user.nombre} actualizó la delegación '{deleg.nombre}' (nivel {deleg.nivel})",
+            tipo="delegacion"
+        )
+        flash("Delegación actualizada correctamente.", "success")
+    except IntegrityError:
+        db.session.rollback()
+        flash("Ya existe otra delegación con esa clave.", "danger")
+
     return redirect(url_for('delegaciones_bp.vista_delegaciones'))
+
 
 @delegaciones_bp.route('/delegacion/<int:delegacion_id>/ccts', methods=['GET', 'POST'])
 @login_required
@@ -1138,9 +1161,9 @@ def reporte_personal_pdf():
 @roles_required('admin', 'coordinador')
 @login_required
 def agregar_delegacion():
-    nombre   = (request.form.get('nombre') or '').strip()
-    nivel    = (request.form.get('nivel') or '').strip()   # libre
-    delegado = (request.form.get('delegado') or '').strip()
+    nombre   = _norm_nombre(request.form.get('nombre'))
+    nivel    = _norm(request.form.get('nivel'))
+    delegado = _norm(request.form.get('delegado'))
 
     if not nombre or not nivel:
         flash('Nombre y nivel son obligatorios.', 'warning')
@@ -1155,11 +1178,15 @@ def agregar_delegacion():
             tipo="delegacion"
         )
         flash('Delegación creada correctamente.', 'success')
+    except IntegrityError:
+        db.session.rollback()
+        flash('Ya existe una delegación con esa clave.', 'danger')
     except Exception as e:
         db.session.rollback()
         flash(f'No se pudo crear la delegación: {e}', 'danger')
 
     return redirect(url_for('delegaciones_bp.vista_delegaciones'))
+
 
 @delegaciones_bp.route('/delegaciones/<int:delegacion_id>/tabla-personal')
 @login_required
