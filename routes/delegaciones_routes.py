@@ -525,13 +525,20 @@ def subir_excel_delegaciones(delegacion_id):
             registros_ignorados = 0
 
             for index, row in df.iterrows():
-                nombre = row.get('nombre')
-                nivel = row.get('nivel')
+                raw_nombre = row.get('nombre')
+                raw_nivel  = row.get('nivel')
 
-                if isinstance(nombre, str) and isinstance(nivel, str) and nombre.strip() and nivel.strip():
-                    nueva = Delegacion(nombre=nombre.strip(), nivel=nivel.strip().upper())
-                    db.session.add(nueva)
-                    registros_agregados += 1
+                if isinstance(raw_nombre, str) and isinstance(raw_nivel, str) and raw_nombre.strip() and raw_nivel.strip():
+                    nombre = _norm_nombre(raw_nombre)
+                    nivel  = _norm(raw_nivel).upper()
+                    try:
+                        nueva = Delegacion(nombre=nombre, nivel=nivel)
+                        db.session.add(nueva)
+                        db.session.flush()  # detecta duplicado aquí sin tumbar todo
+                        registros_agregados += 1
+                    except IntegrityError:
+                        db.session.rollback()
+                        registros_ignorados += 1
                 else:
                     registros_ignorados += 1
 
@@ -539,6 +546,7 @@ def subir_excel_delegaciones(delegacion_id):
             flash(f'Se cargaron {registros_agregados} delegaciones. {registros_ignorados} filas ignoradas.', 'success')
         except Exception as e:
             flash(f'Ocurrió un error al procesar el archivo: {str(e)}', 'danger')
+
     else:
         flash('Formato de archivo no permitido. Usa .xlsx', 'danger')
 
