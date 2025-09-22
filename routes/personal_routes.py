@@ -191,10 +191,26 @@ def busqueda_personal():
 @personal_bp.route("/detalle_personal/<int:id>")
 @login_required
 def vista_detalle_personal(id):
+    from flask import current_app
     persona = Personal.query.get_or_404(id)
-    usuarios = Usuario.query.all()
+
+    # Usuarios (por si en prod hay problema de conexión/permiso)
+    try:
+        usuarios = Usuario.query.all()
+    except Exception:
+        current_app.logger.exception("Error cargando usuarios para detalle_personal")
+        usuarios = []
     usuarios_por_id = {u.id: u for u in usuarios}
-    niveles_disponibles = [n[0] for n in db.session.query(distinct(Plantel.nivel)).order_by(Plantel.nivel).all()]
+
+    # Niveles (suele romper si el esquema de Plantel en prod no tiene 'nivel' o está desfasado)
+    try:
+        niveles_disponibles = [
+            n[0] for n in db.session.query(distinct(Plantel.nivel)).order_by(Plantel.nivel).all()
+        ]
+    except Exception:
+        current_app.logger.exception("Error consultando distinct(Plantel.nivel) en detalle_personal")
+        niveles_disponibles = []
+
     return render_template(
         "detalle_personal.html",
         persona=persona,
@@ -202,6 +218,7 @@ def vista_detalle_personal(id):
         usuarios_por_id=usuarios_por_id,
         timedelta=timedelta
     )
+
 
 @personal_bp.route("/eliminar_personal/<int:id>", methods=["POST"])
 @roles_required('admin')
