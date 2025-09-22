@@ -2,6 +2,17 @@
 
 {% block title %}Personal registrado{% endblock %}
 
+{% import '_breadcrumbs.html' as bc %}
+
+{% block breadcrumbs %}
+  {{ bc.render_breadcrumbs([
+    ('Inicio', url_for('dashboard_bp.dashboard')),
+    ('Delegaciones', url_for('delegaciones_bp.vista_delegaciones')),
+    (delegacion.nombre, url_for('delegaciones_bp.vista_ccts_por_delegacion', delegacion_id=delegacion.id)),
+    (plantel.nombre ~ ' (' ~ plantel.cct ~ ')', None)
+  ]) }}
+{% endblock %}
+
 {% block content %}
 
 <a href="{{ url_for('delegaciones_bp.vista_ccts_por_delegacion', delegacion_id=delegacion.id) }}" class="btn btn-secondary mb-3">

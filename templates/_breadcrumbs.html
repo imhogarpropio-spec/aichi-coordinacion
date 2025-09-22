@@ -1,0 +1,14 @@
+{# templates/_breadcrumbs.html #}
+{% macro render_breadcrumbs(items) -%}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    {% for label, href in items %}
+      {% if loop.last or not href %}
+        <li class="breadcrumb-item active" aria-current="page">{{ label }}</li>
+      {% else %}
+        <li class="breadcrumb-item"><a href="{{ href }}">{{ label }}</a></li>
+      {% endif %}
+    {% endfor %}
+  </ol>
+</nav>
+{%- endmacro %}

@@ -1,6 +1,24 @@
 {% extends 'base.html' %}
 {% block title %}Detalle del Personal{% endblock %}
 
+{% import '_breadcrumbs.html' as bc %}
+{% set pl = persona.plantel %}
+
+{% block breadcrumbs %}
+  {{ bc.render_breadcrumbs([
+    ('Inicio', url_for('dashboard_bp.dashboard')),
+    ('Delegaciones', url_for('delegaciones_bp.vista_delegaciones')),
+    (pl.delegacion.nombre if pl and pl.delegacion else 'Delegación',
+      url_for('delegaciones_bp.vista_delegacion', delegacion_id=pl.delegacion_id) if pl and pl.delegacion_id else None),
+    ((pl.nombre ~ ' (' ~ pl.cct ~ ')') if pl else (persona.cct or 'Plantel')),
+    # Link a la lista del CCT si podemos
+    ( 'Personal', url_for('personal_bp.vista_personal',
+                          delegacion=(pl.delegacion.nombre if pl and pl.delegacion else ''),
+                          cct=(pl.cct if pl else persona.cct or '')) if (pl or persona.cct) else None ),
+    ( (persona.apellido_paterno ~ ' ' ~ persona.apellido_materno ~ ' ' ~ persona.nombre)|trim, None )
+  ]) }}
+{% endblock %}
+
 {% block content %}
 
 {% macro campo(label, value) -%}
