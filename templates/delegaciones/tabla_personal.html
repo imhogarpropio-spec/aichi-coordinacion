@@ -224,7 +224,7 @@
         "dom_esc_calle","dom_esc_num_ext","dom_esc_num_int","dom_esc_cruce1","dom_esc_cruce2",
         "dom_esc_localidad","dom_esc_colonia","dom_esc_mun_nom","dom_esc_cp","dom_esc_coordenadas_gps"
       ]);
-      if (cacheFields.has(key)) { col.editor = false; col.cssClass = (col.cssClass || "") + " text-muted"; }
+      if (cacheFields.has(key)) { col.editor = false; col.cssClass = (col.cssClass ? col.cssClass + " " : "") + "text-muted"; }
 
       if (key === "id") col.visible = false;
       if (key === "genero"){ col.editor = puedeEditar ? "select" : false; col.editorParams = { values:{H:"H", M:"M"} }; col.width = 120; }
