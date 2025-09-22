@@ -4,8 +4,6 @@ from extensiones import db, mail, login_manager
 from werkzeug.security import generate_password_hash
 from flask_login import current_user
 from flask_migrate import Migrate
-from routes.notificacion_routes import notificacion_bp
-from routes.planteles_api import planteles_api
 
 
 
@@ -92,7 +90,6 @@ def create_app():
     app.register_blueprint(usuarios_bp)
     app.register_blueprint(notificacion_bp)
     app.register_blueprint(planteles_api)
-    app.register_blueprint(notificacion_bp)
 
 
 
