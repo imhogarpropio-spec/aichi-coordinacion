@@ -16,7 +16,13 @@
 </a>
 
 
-<a href="{{ url_for('personal_bp.vista_personal', delegacion=persona.plantel.delegacion.nombre, cct=persona.cct) }}" class="btn btn-secondary">
+<a
+  href="{{ url_for(
+        'personal_bp.vista_personal',
+        delegacion=(persona.plantel.delegacion.nombre if persona.plantel and persona.plantel.delegacion else ''),
+        cct=persona.cct
+  ) }}"
+  class="btn btn-secondary">
   ⬅️ Regresar a Personal
 </a>
 
@@ -29,12 +35,22 @@
 
   <h4 class="mb-3">Detalle del personal: <strong>{{ persona.apellido_paterno }} {{ persona.apellido_materno }} {{ persona.nombre }}</strong></h4>
 
-  <div class="alert alert-secondary py-2">
-    <div><strong>Plantel: </strong>{{ plantel.nombre }} ({{ plantel.cct }})</div>
-    <div><small>{{ plantel.calle }} {{ plantel.num_exterior }} {{ plantel.colonia }}, {{ plantel.municipio }}, C.P. {{ plantel.cp }}</small></div>
-  </div>
+  {# ✅ Versión segura (usa persona.plantel y valida None) #}
+  {% set pl = persona.plantel %}
+  {% if pl %}
+    <div class="alert alert-secondary py-2">
+      <div><strong>Plantel: </strong>{{ pl.nombre }} ({{ pl.cct }})</div>
+      <div><small>{{ pl.calle }} {{ pl.num_exterior }} {{ pl.colonia }}, {{ pl.municipio }}, C.P. {{ pl.cp }}</small></div>
+    </div>
+    <div class="list-group-item">
+      <p><strong>CCT de adscripción:</strong> {{ persona.cct }} – {{ pl.nombre }}</p>
+    </div>
+  {% else %}
+    <div class="alert alert-warning py-2 mb-2">
+      No hay plantel asociado a este registro (CCT: {{ persona.cct or '—' }}).
+    </div>
+  {% endif %}
 
-  <li class="list-group-item"><p><strong>CCT de adscripción:</strong> {{ persona.cct }} – {{ persona.plantel.nombre }}</p>
 
   </div>
 
