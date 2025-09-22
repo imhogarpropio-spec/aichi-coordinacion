@@ -29,6 +29,11 @@
 
   <h4 class="mb-3">Detalle del personal: <strong>{{ persona.apellido_paterno }} {{ persona.apellido_materno }} {{ persona.nombre }}</strong></h4>
 
+  <div class="alert alert-secondary py-2">
+    <div><strong>Plantel: </strong>{{ plantel.nombre }} ({{ plantel.cct }})</div>
+    <div><small>{{ plantel.calle }} {{ plantel.num_exterior }} {{ plantel.colonia }}, {{ plantel.municipio }}, C.P. {{ plantel.cp }}</small></div>
+  </div>
+
   <li class="list-group-item"><p><strong>CCT de adscripción:</strong> {{ persona.cct }} – {{ persona.plantel.nombre }}</p>
 
   </div>

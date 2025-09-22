@@ -1369,6 +1369,30 @@ def api_guardar_personal_bulk(delegacion_id):
         s = synonyms.get(s, s)
 
         return s if s in ALLOWED_FUNC_COORD else None
+    
+    def _cachear_plantel_en_personal(persona, plantel):
+        # Campos “cache” en Personal que reflejan al Plantel
+        persona.escuela_nombre = plantel.nombre
+        persona.turno = plantel.turno
+        persona.nivel = plantel.nivel
+        persona.subs_modalidad = getattr(plantel, "modalidad", None)
+        persona.zona_escolar = plantel.zona_escolar
+        persona.sector = plantel.sector
+
+        persona.dom_esc_calle = plantel.calle
+        persona.dom_esc_num_ext = plantel.num_exterior
+        persona.dom_esc_num_int = plantel.num_interior
+        persona.dom_esc_cruce1 = plantel.cruce_1
+        persona.dom_esc_cruce2 = plantel.cruce_2
+        persona.dom_esc_localidad = plantel.localidad
+        persona.dom_esc_colonia = plantel.colonia
+        persona.dom_esc_mun_nom = plantel.municipio
+        persona.dom_esc_cp = plantel.cp
+        persona.dom_esc_coordenadas_gps = plantel.coordenadas_gps
+
+        # Otros (si los usas en Personal como “cache” institucional)
+        persona.estado = plantel.estado
+
 
     actualizados = 0
 
@@ -1445,6 +1469,14 @@ def api_guardar_personal_bulk(delegacion_id):
         if cambios:
             if hasattr(persona, "updated_at"):
                 persona.updated_at = datetime.now(timezone('America/Mexico_City'))
+            # Si el CCT cambió, recalcular cache desde Plantel
+            cambio_cct = any(campo == "cct" for campo, _, _ in cambios)
+            if cambio_cct:
+                p = Plantel.query.filter_by(cct=persona.cct).first()
+                if p:
+                    _cachear_plantel_en_personal(persona, p)
+                    # (Opcional) también podrías registrar en historial campos cacheados, pero no es necesario
+
             db.session.add(persona)
             db.session.flush()
 

@@ -4,6 +4,10 @@ from extensiones import db, mail, login_manager
 from werkzeug.security import generate_password_hash
 from flask_login import current_user
 from flask_migrate import Migrate
+from routes.notificacion_routes import notificacion_bp
+from routes.planteles_api import planteles_api
+
+
 
 # ⬅️ Migrate como objeto global (sin pasar app todavía)
 migrate = Migrate()
@@ -77,6 +81,8 @@ def create_app():
     from routes.accesos_routes import accesos_bp
     from routes.usuarios_routes import usuarios_bp
     from routes.notificacion_routes import notificacion_bp
+    from routes.planteles_api import planteles_api
+
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
@@ -85,6 +91,11 @@ def create_app():
     app.register_blueprint(accesos_bp)
     app.register_blueprint(usuarios_bp)
     app.register_blueprint(notificacion_bp)
+    app.register_blueprint(planteles_api)
+    app.register_blueprint(notificacion_bp)
+
+
+
 
     try:
         ensure_admin(app)

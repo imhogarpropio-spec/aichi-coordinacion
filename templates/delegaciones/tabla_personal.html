@@ -219,6 +219,13 @@
 
     const cols = ordered.map(key => {
       const col = { title: niceTitle(key), field: key, headerFilter:"input", editor: puedeEditar ? "input" : false, minWidth:120 };
+      const cacheFields = new Set([
+        "escuela_nombre","turno","nivel","subs_modalidad","zona_escolar","sector",
+        "dom_esc_calle","dom_esc_num_ext","dom_esc_num_int","dom_esc_cruce1","dom_esc_cruce2",
+        "dom_esc_localidad","dom_esc_colonia","dom_esc_mun_nom","dom_esc_cp","dom_esc_coordenadas_gps"
+      ]);
+      if (cacheFields.has(key)) { col.editor = false; col.cssClass = (col.cssClass || "") + " text-muted"; }
+
       if (key === "id") col.visible = false;
       if (key === "genero"){ col.editor = puedeEditar ? "select" : false; col.editorParams = { values:{H:"H", M:"M"} }; col.width = 120; }
       if (key === "estatus_membresia"){
@@ -364,14 +371,50 @@
       { label: "📝 Agregar observación", action: (e, row) => { abrirModalObs(row.getData(), row); } }
     ],
 
-    cellEdited: function(cell){
+    cellEdited: async function(cell){
       const row = cell.getRow();
       const id = row.getData().id;
+
+      // 🔒 marca sucia
       if (id != null){
         dirtyIds.add(id);
         row.getElement().style.backgroundColor = "rgba(255,193,7,.15)";
       }
+
+      // 🔁 Si cambió CCT, trae plantel y refresca cache
+      if (cell.getField() === "cct"){
+        const cct = (cell.getValue() || "").trim();
+        if (!cct) return;
+
+        try{
+          const r = await fetch(`/api/planteles/${encodeURIComponent(cct)}`);
+          if (!r.ok) { console.warn("CCT no encontrado"); return; }
+          const p = await r.json();
+          await row.update({
+            escuela_nombre: p.plantel_nombre || null,
+            turno: p.turno || null,
+            nivel: p.nivel || null,
+            subs_modalidad: p.subs_modalidad || null,
+            zona_escolar: p.zona_escolar || null,
+            sector: p.sector || null,
+
+            dom_esc_calle: p.dom_esc_calle || null,
+            dom_esc_num_ext: p.dom_esc_num_ext || null,
+            dom_esc_num_int: p.dom_esc_num_int || null,
+            dom_esc_cruce1: p.dom_esc_cruce1 || null,
+            dom_esc_cruce2: p.dom_esc_cruce2 || null,
+            dom_esc_localidad: p.dom_esc_localidad || null,
+            dom_esc_colonia: p.dom_esc_colonia || null,
+            dom_esc_mun_nom: p.dom_esc_mun_nom || null,
+            dom_esc_cp: p.dom_esc_cp || null,
+            dom_esc_coordenadas_gps: p.dom_esc_coordenadas_gps || null,
+          });
+        }catch(e){
+          console.error(e);
+        }
+      }
     },
+
 
     rowFormatter: function(row){
       const data = row.getData();

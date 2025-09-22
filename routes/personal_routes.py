@@ -804,6 +804,31 @@ def agregar_personal_manual(cct):
         correo_electronico=request.form.get('correo_electronico', '').strip()
     )
 
+    # Cachear datos del plantel en el registro de personal
+    p = plantel  # ya lo tienes arriba con first_or_404()
+    if p:
+        nuevo.escuela_nombre = p.nombre
+        nuevo.turno = p.turno
+        nuevo.nivel = p.nivel
+        nuevo.subs_modalidad = getattr(p, "modalidad", None)
+        nuevo.zona_escolar = p.zona_escolar
+        nuevo.sector = p.sector
+
+        nuevo.dom_esc_calle = p.calle
+        nuevo.dom_esc_num_ext = p.num_exterior
+        nuevo.dom_esc_num_int = p.num_interior
+        nuevo.dom_esc_cruce1 = p.cruce_1
+        nuevo.dom_esc_cruce2 = p.cruce_2
+        nuevo.dom_esc_localidad = p.localidad
+        nuevo.dom_esc_colonia = p.colonia
+        nuevo.dom_esc_mun_nom = p.municipio
+        nuevo.dom_esc_cp = p.cp
+        nuevo.dom_esc_coordenadas_gps = p.coordenadas_gps
+
+        nuevo.estado = p.estado
+
+
+
     try:
         db.session.add(nuevo)
         db.session.commit()
