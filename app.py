@@ -4,7 +4,7 @@ from extensiones import db, mail, login_manager
 from werkzeug.security import generate_password_hash
 from flask_login import current_user
 from flask_migrate import Migrate
-
+from authz import can
 
 
 # ⬅️ Migrate como objeto global (sin pasar app todavía)
@@ -111,3 +111,7 @@ if __name__ == '__main__':
     app = create_app()
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=True, host='0.0.0.0', port=port)
+
+@app.context_processor
+def inject_can():
+    return dict(can=can)

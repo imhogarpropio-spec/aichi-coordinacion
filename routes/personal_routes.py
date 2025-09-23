@@ -6,11 +6,11 @@ from datetime import datetime, timedelta
 from models import db, Plantel, Personal, Usuario, HistorialCambios, Delegacion, ObservacionPersonal as Observacion
 
 from utils import registrar_historial, registrar_notificacion
-from sqlalchemy import distinct, func
+from sqlalchemy import distinct, func, text
 import pandas as pd
 import re
 from sqlalchemy.exc import IntegrityError
-from authz import roles_required
+from authz import roles_required, requires, limit_query_to_user_delegacion, is_global_viewer, require_same_delegacion
 
 # Excel
 from openpyxl import Workbook
@@ -35,11 +35,18 @@ def _nombre_usuario_por_id(uid):
 
 
 def _check_access_persona(persona: Personal):
-    """Delegado: solo si la persona pertenece a su delegación."""
-    if current_user.rol == 'delegado':
-        delega_id = getattr(persona.plantel, 'delegacion_id', None)
-        if delega_id != current_user.delegacion_id:
-            abort(403)
+    if is_global_viewer():
+        return
+    # 1) intento directo
+    delega_id = getattr(getattr(persona, "plantel", None), "delegacion_id", None)
+    if delega_id is None:
+        # 2) fallback por CCT -> Plantel
+        pl = Plantel.query.filter_by(cct=(persona.cct or "").strip().upper()).first()
+        delega_id = getattr(pl, "delegacion_id", None)
+        if pl is None:
+            abort(404)
+    if delega_id != getattr(current_user, "delegacion_id", None):
+        abort(403)
 
 def _fetch_ficha_persona(persona_id: int):
     persona = Personal.query.get_or_404(persona_id)
@@ -73,17 +80,13 @@ def _fetch_ficha_persona(persona_id: int):
     }
     return datos
 
-def PKIF(text, width, height, bold=False):
-    para = P(text, bold=bold)
-    return KeepInFrame(width, height, [para], mode="shrink")  # ajusta fuente solo si es necesario
-
 def _check_access_cct(cct: str):
-    """Valida que el usuario pueda acceder al CCT (delegado solo su delegación)."""
+    cct = (cct or "").strip().upper()  # ← normaliza
     plantel = Plantel.query.filter_by(cct=cct).first()
     if not plantel:
         abort(404)
-    if current_user.rol == 'delegado':
-        if plantel.delegacion_id != current_user.delegacion_id:
+    if not is_global_viewer():
+        if plantel.delegacion_id != getattr(current_user, "delegacion_id", None):
             abort(403)
     return plantel
 
@@ -103,9 +106,9 @@ def _fetch_personal_detalle_por_cct(cct: str):
 
     # Trae personal del CCT
     personas = (Personal.query
-            .filter(Personal.cct == cct)
-            .order_by(Personal.apellido_paterno.asc(), Personal.apellido_materno.asc(), Personal.nombre.asc())
-            .all())
+        .filter(func.upper(Personal.cct) == cct.upper())
+        .order_by(Personal.apellido_paterno.asc(), Personal.apellido_materno.asc(), Personal.nombre.asc())
+        .all())
 
     rows = []
     hombres = mujeres = total = 0
@@ -166,6 +169,7 @@ def _fetch_personal_detalle_por_cct(cct: str):
 
 @personal_bp.route("/busqueda_personal", methods=["GET", "POST"])
 @login_required
+@requires("personal.view")
 def busqueda_personal():
     resultados = []
     if request.method == 'POST':
@@ -179,7 +183,7 @@ def busqueda_personal():
             'colonia':           request.form.get('colonia', '').strip(),
         }
 
-        consulta = Personal.query
+        consulta = limit_query_to_user_delegacion(Personal.query, Personal)  # 👈 scope
         for campo, valor in filtros.items():
             if valor:
                 consulta = consulta.filter(getattr(Personal, campo).ilike(f"%{valor}%"))
@@ -188,13 +192,15 @@ def busqueda_personal():
 
     return render_template("busqueda_personal.html", resultados=resultados)
 
+
 @personal_bp.route("/detalle_personal/<int:id>")
 @login_required
+@requires("personal.view")
 def vista_detalle_personal(id):
     from flask import current_app
     persona = Personal.query.get_or_404(id)
+    _check_access_persona(persona)  # 👈 valida delegación para roles acotados
 
-    # Usuarios (por si en prod hay problema de conexión/permiso)
     try:
         usuarios = Usuario.query.all()
     except Exception:
@@ -202,7 +208,6 @@ def vista_detalle_personal(id):
         usuarios = []
     usuarios_por_id = {u.id: u for u in usuarios}
 
-    # Niveles (suele romper si el esquema de Plantel en prod no tiene 'nivel' o está desfasado)
     try:
         niveles_disponibles = [
             n[0] for n in db.session.query(distinct(Plantel.nivel)).order_by(Plantel.nivel).all()
@@ -218,6 +223,7 @@ def vista_detalle_personal(id):
         usuarios_por_id=usuarios_por_id,
         timedelta=timedelta
     )
+
 
 
 @personal_bp.route("/eliminar_personal/<int:id>", methods=["POST"])
@@ -259,7 +265,8 @@ def eliminar_personal(id):
 
 
 @personal_bp.route("/editar_personal/<int:id>", methods=["POST"])
-@login_required
+@requires("personal.edit")
+@require_same_delegacion(lambda id: Personal.query.get_or_404(id))
 def editar_personal(id):
     persona = Personal.query.get_or_404(id)
 
@@ -277,6 +284,9 @@ def editar_personal(id):
         "dom_esc_localidad","dom_esc_colonia","dom_esc_mun_nom","dom_esc_cp","dom_esc_coordenadas_gps",
         "estado","seccion_snte","del_o_ct","org","coord_reg","fun_sin",
     }
+
+    if getattr(current_user, "rol", "") != "admin":
+        campos.discard("cct")
 
     def parse_date(s):
         if not s: return None
@@ -305,10 +315,10 @@ def editar_personal(id):
             s = (raw or "").strip()
             valor_nuevo = int(s) if s.isdigit() else None
         elif campo == "cct":
-            # 👉 si viene vacío, conservar el actual
-            valor_nuevo = (raw or persona.cct or "").strip()
-            # Si realmente cambió, validar la FK
-            if valor_nuevo != persona.cct:
+            # si viene vacío, conserva el actual; y normaliza a MAYÚSCULAS
+            valor_nuevo = (raw or persona.cct or "").strip().upper()
+            actual = (persona.cct or "").strip().upper()
+            if valor_nuevo != actual:
                 if not Plantel.query.filter_by(cct=valor_nuevo).first():
                     flash("El CCT indicado no existe en planteles.", "danger")
                     return redirect(url_for("personal_bp.vista_detalle_personal", id=persona.id))
@@ -323,7 +333,13 @@ def editar_personal(id):
                 setattr(persona, campo, valor_nuevo)
                 cambios += 1
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        flash(f"❌ Error al guardar: {e}", "danger")
+        return redirect(url_for("personal_bp.vista_detalle_personal", id=persona.id))
+
     registrar_notificacion(
         f"{current_user.nombre} actualizó datos de {persona.nombre} ({getattr(persona,'curp','SIN CURP')})",
         tipo="personal"
@@ -332,10 +348,11 @@ def editar_personal(id):
     return redirect(url_for("personal_bp.vista_detalle_personal", id=persona.id))
 
 
+
 @personal_bp.route('/subir_excel_personal/<cct>', methods=['POST'])
-@roles_required('admin')
+@roles_required('admin', 'coordinador')
 def subir_excel_personal(cct):
-    plantel = Plantel.query.filter_by(cct=cct).first_or_404()
+    plantel = _check_access_cct(cct)
 
     file = request.files.get('archivo_excel')
     if not file or file.filename == '':
@@ -485,7 +502,7 @@ def subir_excel_personal(cct):
                 dest[db_field] = val
 
             # Fuerza adscripción al CCT de la URL
-            dest["cct"] = cct
+            dest["cct"] = plantel.cct
 
             # FK CCT
             if not Plantel.query.filter_by(cct=dest["cct"]).first():
@@ -546,7 +563,8 @@ def ver_historial(entidad, id):
     return render_template("ver_historial.html", historial=historial, tipo=entidad)
 
 @personal_bp.route('/agregar_observacion/<int:personal_id>', methods=['POST'])
-@login_required
+@requires("personal.edit")
+@require_same_delegacion(lambda personal_id: Personal.query.get_or_404(personal_id))
 def agregar_observacion(personal_id):
     texto = (request.form.get('texto') or '').strip()
     if not texto:
@@ -569,9 +587,6 @@ def agregar_observacion(personal_id):
 
     flash("✅ Observación registrada correctamente.", "success")
     return redirect(request.referrer or url_for('personal_bp.vista_detalle_personal', id=personal_id))
-
-
-from sqlalchemy import text
 
 @personal_bp.route('/editar_observacion/<int:obs_id>', methods=['POST'])
 @roles_required('admin')
@@ -643,15 +658,18 @@ def eliminar_observacion(obs_id):
 @roles_required('admin')
 def cambiar_adscripcion(id):
     persona = Personal.query.get_or_404(id)
-    nuevo_cct = (request.form.get("nuevo_cct") or "").strip()
+
+    # Normalizamos entradas
+    nuevo_cct_raw = (request.form.get("nuevo_cct") or "")
     motivo = (request.form.get("motivo") or "").strip()
+    nuevo_cct = nuevo_cct_raw.strip().upper()  # ← forzamos mayúsculas
 
     # Validaciones básicas
     if not nuevo_cct:
         flash("⚠️ Debes seleccionar un CCT válido.", "warning")
         return redirect(url_for("personal_bp.vista_detalle_personal", id=id))
 
-    if nuevo_cct == (persona.cct or "").strip():
+    if nuevo_cct == ((persona.cct or "").strip().upper()):
         flash("ℹ️ El personal ya está adscrito a ese CCT.", "info")
         return redirect(url_for("personal_bp.vista_detalle_personal", id=id))
 
@@ -659,13 +677,15 @@ def cambiar_adscripcion(id):
         flash("⚠️ Debes escribir un motivo del cambio.", "warning")
         return redirect(url_for("personal_bp.vista_detalle_personal", id=id))
 
+    # ✅ Validar existencia del CCT destino ANTES de tocar nada
+    dest_plantel = Plantel.query.filter_by(cct=nuevo_cct).first()
+    if not dest_plantel:
+        flash("⚠️ El CCT destino no existe.", "danger")
+        return redirect(url_for("personal_bp.vista_detalle_personal", id=id))
+
     # Datos previos para auditoría
     cct_anterior = persona.cct
     estado_anterior = persona.estatus_membresia or ""
-
-    # Resolver plantel destino (si aplica mostrar nombre en observación)
-    nuevo_plantel = Plantel.query.filter_by(cct=nuevo_cct).first()
-    nombre_plantel = nuevo_plantel.nombre if nuevo_plantel else ""
 
     # HISTORIAL: cambio de CCT (antes → después)
     registrar_historial(
@@ -678,20 +698,20 @@ def cambiar_adscripcion(id):
         tipo="cambio de adscripción"
     )
 
-    # OBSERVACIÓN: motivo del cambio
+    # OBSERVACIÓN: motivo del cambio (usando nombre del plantel destino)
     observacion = Observacion(
         personal_id=persona.id,
         usuario_id=current_user.id,
-        texto=f"Motivo de cambio de adscripción: {motivo} (ahora adscrito al CCT {nuevo_cct} – {nombre_plantel})",
+        texto=f"Motivo de cambio de adscripción: {motivo} (ahora adscrito al CCT {nuevo_cct} – {dest_plantel.nombre})",
         fecha=datetime.now()
     )
     db.session.add(observacion)
 
-    # APLICAR cambio y LIMPIAR estado "baja en proceso"
+    # Aplicar cambio y normalizar estatus
     persona.cct = nuevo_cct
-    persona.estatus_membresia = "ACTIVO"   # <- vuelve al color normal en la UI
+    persona.estatus_membresia = "ACTIVO"
 
-    # HISTORIAL: dejar rastro de que el estatus se limpió/normalizó tras el movimiento
+    # HISTORIAL: rastro del estatus
     registrar_historial(
         entidad="personal",
         campo="estatus_membresia",
@@ -702,10 +722,15 @@ def cambiar_adscripcion(id):
         tipo="ADSCRIPCION_CAMBIO"
     )
 
-    # GUARDAR todo junto
-    db.session.commit()
+    # Guardar todo
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        flash(f"❌ Error al actualizar adscripción: {e}", "danger")
+        return redirect(url_for("personal_bp.vista_detalle_personal", id=persona.id))
 
-    # NOTIFICACIÓN: incluye CCT anterior → nuevo y aclaración de estatus
+    # Notificación
     registrar_notificacion(
         f"{current_user.nombre} cambió la adscripción de {persona.apellido_paterno} {persona.apellido_materno} {persona.nombre} "
         f"({getattr(persona, 'curp', 'SIN CURP')}) de {cct_anterior} a {nuevo_cct}. "
@@ -719,26 +744,32 @@ def cambiar_adscripcion(id):
 
 @personal_bp.route('/personal/<delegacion>/<cct>')
 @login_required
+@requires("personal.view")  # 👈 protege también por permiso
 def vista_personal(delegacion, cct):
-    plantel = Plantel.query.filter_by(cct=cct).first_or_404()
+    # 1) Valida acceso al CCT según el rol (secretario/admin ven todo; roles acotados solo su delegación)
+    plantel = _check_access_cct(cct)
 
+    # 2) Usa la delegación de la URL si existe; si no, cae a la del plantel
     delegacion_obj = Delegacion.query.filter(func.lower(Delegacion.nombre) == delegacion.lower()).first()
-
     if not delegacion_obj:
         delegacion_obj = plantel.delegacion
 
-    personal = Personal.query.filter_by(cct=cct).order_by(
-        Personal.apellido_paterno,
-        Personal.apellido_materno,
-        Personal.nombre
-    ).all()
+    # 3) Lista el personal del CCT, aplicando scope por delegación para roles acotados
+    q = limit_query_to_user_delegacion(Personal.query, Personal)
+    personal = (
+        q.filter(func.upper(Personal.cct) == cct.upper())
+        .order_by(Personal.apellido_paterno, Personal.apellido_materno, Personal.nombre)
+        .all()
+    )
 
     return render_template("consulta_personal.html", plantel=plantel, personal=personal, delegacion=delegacion_obj)
 
+
 @personal_bp.route('/agregar_personal/<cct>', methods=['POST'])
-@login_required
+@requires("personal.create")  # 👈 solo quien tenga permiso de crear puede entrar (secretario queda fuera)
 def agregar_personal_manual(cct):
-    plantel = Plantel.query.filter_by(cct=cct).first_or_404()
+    # 1) 🔒 Validar que el usuario tenga acceso a ese CCT (secretario/admin ven todo; roles acotados solo su delegación)
+    plantel = _check_access_cct(cct)
 
     def validar_curp(curp):
         return re.fullmatch(r'^[A-Z]{4}\d{6}[HM][A-Z]{5}[0-9A-Z]\d$', curp)
@@ -746,9 +777,9 @@ def agregar_personal_manual(cct):
     def validar_rfc(rfc):
         return re.fullmatch(r'^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$', rfc)
 
-    curp = request.form.get('curp', '').strip().upper()
-    rfc  = request.form.get('rfc', '').strip().upper()
-    clave = request.form.get('clave_presupuestal', '').strip().upper()  # 👈 NUEVO
+    curp = (request.form.get('curp', '') or '').strip().upper()
+    rfc  = (request.form.get('rfc', '') or '').strip().upper()
+    clave = (request.form.get('clave_presupuestal', '') or '').strip().upper()  # 👈 normaliza
 
     if not validar_curp(curp):
         flash("⚠️ CURP inválido. Verifica el formato (18 caracteres, en mayúsculas).", "danger")
@@ -762,7 +793,7 @@ def agregar_personal_manual(cct):
         flash("⚠️ La clave presupuestal es obligatoria.", "danger")
         return redirect(url_for('personal_bp.vista_personal', delegacion=plantel.delegacion.nombre, cct=cct))
 
-    # 👇 DUPLICADO por CURP + CLAVE (multi-plaza correcto)
+    # 👇 Evita duplicado por CURP + CLAVE (multi-plaza correcto)
     existe_curp_clave = Personal.query.filter_by(curp=curp, clave_presupuestal=clave).first()
     if existe_curp_clave:
         flash(
@@ -773,7 +804,7 @@ def agregar_personal_manual(cct):
         )
         return redirect(url_for('personal_bp.vista_personal', delegacion=plantel.delegacion.nombre, cct=cct))
 
-    # 👇 RFC: permite mismo RFC si es la misma persona (misma CURP), pero bloquea si es otra persona
+    # 👇 Permite RFC repetido solo si es la misma persona (misma CURP)
     existe_rfc_otro = Personal.query.filter(Personal.rfc == rfc, Personal.curp != curp).first()
     if existe_rfc_otro:
         flash(
@@ -783,7 +814,6 @@ def agregar_personal_manual(cct):
             "danger"
         )
         return redirect(url_for('personal_bp.vista_personal', delegacion=plantel.delegacion.nombre, cct=cct))
-
 
     def convertir_fecha(campo):
         valor = request.form.get(campo)
@@ -795,34 +825,34 @@ def agregar_personal_manual(cct):
         return None
 
     nuevo = Personal(
-        cct=cct,
-        apellido_paterno=request.form.get('apellido_paterno', '').strip(),
-        apellido_materno=request.form.get('apellido_materno', '').strip(),
-        nombre=request.form.get('nombre', '').strip(),
-        genero=request.form.get('genero', '').strip(),
+        cct=cct,  # 👈 fuerza adscripción al CCT validado
+        apellido_paterno=(request.form.get('apellido_paterno', '') or '').strip(),
+        apellido_materno=(request.form.get('apellido_materno', '') or '').strip(),
+        nombre=(request.form.get('nombre', '') or '').strip(),
+        genero=(request.form.get('genero', '') or '').strip(),
         rfc=rfc,
         curp=curp,
-        clave_presupuestal=request.form.get('clave_presupuestal', '').strip(),
-        funcion=request.form.get('funcion', '').strip(),
-        grado_estudios=request.form.get('grado_estudios', '').strip(),
-        titulado=request.form.get('titulado', '').strip(),
+        clave_presupuestal=clave,
+        funcion=(request.form.get('funcion', '') or '').strip(),
+        grado_estudios=(request.form.get('grado_estudios', '') or '').strip(),
+        titulado=(request.form.get('titulado', '') or '').strip(),
         fecha_ingreso=convertir_fecha('fecha_ingreso'),
         fecha_baja_jubilacion=convertir_fecha('fecha_baja_jubilacion'),
-        estatus_membresia=request.form.get('estatus_membresia', '').strip(),
-        nombramiento=request.form.get('nombramiento', '').strip(),
-        domicilio=request.form.get('domicilio', '').strip(),
-        numero=request.form.get('numero', '').strip(),
-        localidad=request.form.get('localidad', '').strip(),
-        colonia=request.form.get('colonia', '').strip(),
-        municipio=request.form.get('municipio', '').strip(),
-        cp=request.form.get('cp', '').strip(),
-        tel1=request.form.get('tel1', '').strip(),
-        tel2=request.form.get('tel2', '').strip(),
-        correo_electronico=request.form.get('correo_electronico', '').strip()
+        estatus_membresia=(request.form.get('estatus_membresia', '') or '').strip(),
+        nombramiento=(request.form.get('nombramiento', '') or '').strip(),
+        domicilio=(request.form.get('domicilio', '') or '').strip(),
+        numero=(request.form.get('numero', '') or '').strip(),
+        localidad=(request.form.get('localidad', '') or '').strip(),
+        colonia=(request.form.get('colonia', '') or '').strip(),
+        municipio=(request.form.get('municipio', '') or '').strip(),
+        cp=(request.form.get('cp', '') or '').strip(),
+        tel1=(request.form.get('tel1', '') or '').strip(),
+        tel2=(request.form.get('tel2', '') or '').strip(),
+        correo_electronico=(request.form.get('correo_electronico', '') or '').strip()
     )
 
-    # Cachear datos del plantel en el registro de personal
-    p = plantel  # ya lo tienes arriba con first_or_404()
+    # Cachear datos del plantel en el registro (consistencia de UI/reportes)
+    p = plantel
     if p:
         nuevo.escuela_nombre = p.nombre
         nuevo.turno = p.turno
@@ -841,10 +871,7 @@ def agregar_personal_manual(cct):
         nuevo.dom_esc_mun_nom = p.municipio
         nuevo.dom_esc_cp = p.cp
         nuevo.dom_esc_coordenadas_gps = p.coordenadas_gps
-
         nuevo.estado = p.estado
-
-
 
     try:
         db.session.add(nuevo)
@@ -857,32 +884,29 @@ def agregar_personal_manual(cct):
     except Exception as e:
         db.session.rollback()
         flash("❌ Error al guardar el personal: " + str(e), "danger")
-
+    # siempre redirige de vuelta al listado del plantel
     return redirect(url_for('personal_bp.vista_personal', delegacion=plantel.delegacion.nombre, cct=cct))
+
+
 
 @personal_bp.route('/ccts_por_nivel')
 @login_required
+@requires("personal.view")
 def obtener_ccts_por_nivel():
     nivel = request.args.get('nivel')
-    
     if not nivel:
         return jsonify([])
 
-    # Búsqueda insensible a mayúsculas
-    planteles = Plantel.query.filter(
-        func.upper(Plantel.nivel) == nivel.upper()
-    ).order_by(Plantel.nombre).all()
+    q = limit_query_to_user_delegacion(Plantel.query, Plantel)  # 👈 scope
+    planteles = (q.filter(func.upper(Plantel.nivel) == nivel.upper())
+                   .order_by(Plantel.nombre).all())
 
-    resultado = [
-        {"cct": p.cct, "nombre": p.nombre}
-        for p in planteles
-    ]
-
-    return jsonify(resultado)
+    return jsonify([{"cct": p.cct, "nombre": p.nombre} for p in planteles])
 
 
 @personal_bp.route('/solicitar_baja/<int:id>', methods=['POST'])
-@roles_required('admin', 'coordinador', 'delegado', 'secretario')
+@roles_required('admin', 'coordinador', 'delegado')
+@require_same_delegacion(lambda id: Personal.query.get_or_404(id))
 def solicitar_baja(id):
     persona = Personal.query.get_or_404(id)
     motivo = (request.form.get('motivo_baja') or '').strip()
@@ -934,6 +958,7 @@ def solicitar_baja(id):
 
 @personal_bp.route('/rechazar_baja/<int:id>', methods=['POST'])
 @roles_required('admin', 'coordinador')
+@require_same_delegacion(lambda id: Personal.query.get_or_404(id))
 def rechazar_baja(id):
     persona = Personal.query.get_or_404(id)
 
@@ -984,6 +1009,7 @@ def rechazar_baja(id):
     
 @personal_bp.route("/personal/<string:cct>/reporte/excel")
 @login_required
+@requires("personal.view")
 def reporte_personal_cct_excel(cct):
     data = _fetch_personal_detalle_por_cct(cct)
 
@@ -1071,6 +1097,7 @@ def reporte_personal_cct_excel(cct):
 
 @personal_bp.route("/personal/<string:cct>/reporte/pdf")
 @login_required
+@requires("personal.view")
 def reporte_personal_cct_pdf(cct):
     data = _fetch_personal_detalle_por_cct(cct)
 
@@ -1173,6 +1200,7 @@ def reporte_personal_cct_pdf(cct):
 
 @personal_bp.route("/personal/<int:persona_id>/ficha/pdf")
 @login_required
+@requires("personal.view")
 def ficha_persona_pdf(persona_id):
     d = _fetch_ficha_persona(persona_id)
     p = d["persona"]
@@ -1237,7 +1265,6 @@ def ficha_persona_pdf(persona_id):
 
     # Observaciones
     story.append(Paragraph("<b>Observaciones</b>", small_bold))
-    story.append(Paragraph("<b>Observaciones</b>", small_bold))
     if d["observaciones"]:
         obs_rows = [[P("Fecha", True), P("Usuario", True), P("Texto", True)]]
         for o in d["observaciones"]:
@@ -1288,6 +1315,7 @@ def ficha_persona_pdf(persona_id):
 
 @personal_bp.route("/personal/<int:persona_id>/ficha/excel")
 @login_required
+@requires("personal.view")
 def ficha_persona_excel(persona_id):
     d = _fetch_ficha_persona(persona_id)
     p = d["persona"]
@@ -1389,5 +1417,42 @@ def ficha_persona_excel(persona_id):
     filename = f"ficha_{p.apellido_paterno or ''}_{p.apellido_materno or ''}_{p.nombre or ''}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     return send_file(out, as_attachment=True, download_name=filename,
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+@personal_bp.route("/api/personal")
+@requires("personal.view")
+def api_listar_personal():
+    return {"ok": False, "error": "No implementado"}, 501
+
+@personal_bp.route("/api/personal", methods=["POST"])
+@requires("personal.create")
+def api_crear_persona():
+    data = request.get_json() or {}
+
+    cct = (data.get("cct") or "").strip().upper()
+
+    if not cct:
+        return {"ok": False, "error": "CCT requerido"}, 400
+
+    # 🔒 valida acceso al CCT (y existencia)
+    _check_access_cct(cct)
+
+    # normalizaciones útiles
+    if "curp" in data: data["curp"] = (data["curp"] or "").strip().upper()
+    if "rfc"  in data: data["rfc"]  = (data["rfc"]  or "").strip().upper()
+    if "clave_presupuestal" in data:
+        data["clave_presupuestal"] = (data["clave_presupuestal"] or "").strip().upper()
+
+    existe = Personal.query.filter_by(
+        curp=data.get("curp"), 
+        clave_presupuestal=data.get("clave_presupuestal")
+    ).first()
+    if existe:
+        return {"ok": False, "error": "Ya existe CURP+clave_presupuestal"}, 409
+
+
+    p = Personal(**data)
+    db.session.add(p)
+    db.session.commit()
+    return {"ok": True, "id": p.id}
 
 
