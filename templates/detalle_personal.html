@@ -2,14 +2,6 @@
 {% block title %}Detalle del Personal{% endblock %}
 
 
-{% macro campo(label, value) -%}
-  <div class="col-md-4 mb-2">
-    <small class="text-muted">{{ label }}</small>
-    <div class="fw-semibold">{{ value if value not in (None, '') else '—' }}</div>
-  </div>
-{%- endmacro %}
-
-
 <a href="{{ url_for('personal_bp.ver_historial', entidad='personal', id=persona.id) }}" class="btn btn-outline-secondary">
   📜 Ver historial de cambios
 </a>
