@@ -1,5 +1,17 @@
 {% extends 'base.html' %}
-{% block title %}CCTs por Delegación{% endblock %}
+
+{% block title %}CCTs de {{ delegacion.nombre }}{% endblock %}
+{% import '_breadcrumbs.html' as bc %}
+
+{% block breadcrumbs %}
+  {{ bc.render_breadcrumbs([
+    ('Inicio', url_for('dashboard_bp.dashboard')),
+    ('Delegaciones', url_for('delegaciones_bp.vista_delegaciones')),
+    (delegacion.nombre if delegacion and delegacion.nombre else 'Delegación',
+     url_for('delegaciones_bp.vista_ccts_por_delegacion',
+             delegacion_id=delegacion.id) if delegacion and delegacion.id else None)
+  ]) }}
+{% endblock %}
 
 {% block content %}
 <h4 class="mb-4">CCTs registrados en la delegación: <strong>{{ delegacion.nombre }}</strong></h4>
