@@ -9,21 +9,17 @@
   {{ bc.render_breadcrumbs([
     ('Inicio', url_for('dashboard_bp.dashboard')),
     ('Delegaciones', url_for('delegaciones_bp.vista_delegaciones')),
-    ( pl and pl.delegacion and (pl.delegacion.nombre or 'Delegación') or 'Delegación',
+    ( pl.delegacion.nombre if pl and pl.delegacion else 'Delegación',
       url_for('delegaciones_bp.vista_delegacion', delegacion_id=pl.delegacion_id) if pl and pl.delegacion_id else None),
-    ( pl and (pl.nombre ~ ' (' ~ pl.cct ~ ')') or (persona.cct or 'Plantel'), None),
+    ( pl.nombre ~ ' (' ~ pl.cct ~ ')' if pl else (persona.cct or 'Plantel'), None),
     ( 'Personal',
       url_for('personal_bp.vista_personal',
               delegacion=(pl.delegacion.nombre if pl and pl.delegacion else ''),
-              cct=((pl.cct if pl else persona.cct) or '')
-      ) if (pl and pl.cct) or persona.cct else None),
-    ( ((persona.apellido_paterno|default('')) ~ ' ' ~
-       (persona.apellido_materno|default('')) ~ ' ' ~
-       (persona.nombre|default('')) )|trim, None )
+              cct=(pl.cct if pl else persona.cct or '')
+      ) if (pl or persona.cct) else None),
+    ( (persona.apellido_paterno ~ ' ' ~ persona.apellido_materno ~ ' ' ~ persona.nombre)|trim, None )
   ]) }}
 {% endblock %}
-
-{% block content %}
 
 {% macro campo(label, value) -%}
   <div class="col-md-4 mb-2">
