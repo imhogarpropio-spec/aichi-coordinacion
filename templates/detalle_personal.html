@@ -9,17 +9,28 @@
   {{ bc.render_breadcrumbs([
     ('Inicio', url_for('dashboard_bp.dashboard')),
     ('Delegaciones', url_for('delegaciones_bp.vista_delegaciones')),
+
+    # Delegación -> usa el endpoint que sí usas en otras vistas
     ( pl.delegacion.nombre if pl and pl.delegacion else 'Delegación',
-      url_for('delegaciones_bp.vista_delegacion', delegacion_id=pl.delegacion_id) if pl and pl.delegacion_id else None),
-    ( pl.nombre ~ ' (' ~ pl.cct ~ ')' if pl else (persona.cct or 'Plantel'), None),
+      url_for('delegaciones_bp.vista_ccts_por_delegacion', delegacion_id=pl.delegacion_id) if pl and pl.delegacion_id else None),
+
+    # Plantel (solo texto)
+    ( (pl.nombre ~ ' (' ~ pl.cct ~ ')') if pl else (persona.cct or 'Plantel'), None),
+
+    # Lista de Personal (link si hay CCT)
     ( 'Personal',
       url_for('personal_bp.vista_personal',
               delegacion=(pl.delegacion.nombre if pl and pl.delegacion else ''),
-              cct=(pl.cct if pl else persona.cct or '')
-      ) if (pl or persona.cct) else None),
-    ( (persona.apellido_paterno ~ ' ' ~ persona.apellido_materno ~ ' ' ~ persona.nombre)|trim, None )
+              cct=((pl.cct if pl else persona.cct) or '')
+      ) if ((pl and pl.cct) or persona.cct) else None),
+
+    # Nombre de la persona (solo texto)
+    ( ((persona.apellido_paterno|default('')) ~ ' ' ~
+       (persona.apellido_materno|default('')) ~ ' ' ~
+       (persona.nombre|default('')) )|trim, None )
   ]) }}
 {% endblock %}
+
 
 {% macro campo(label, value) -%}
   <div class="col-md-4 mb-2">
