@@ -9,23 +9,15 @@
   {{ bc.render_breadcrumbs([
     ('Inicio', url_for('dashboard_bp.dashboard')),
     ('Delegaciones', url_for('delegaciones_bp.vista_delegaciones')),
-
-    # Delegación (link solo si tenemos ID)
     ( pl.delegacion.nombre if pl and pl.delegacion else 'Delegación',
       url_for('delegaciones_bp.vista_ccts_por_delegacion',
               delegacion_id=pl.delegacion_id) if pl and pl.delegacion_id else None),
-
-    # Plantel (solo texto)
     ( (pl.nombre ~ ' (' ~ pl.cct ~ ')') if pl else (persona.cct or 'Plantel'), None),
-
-    # Lista de Personal (link si tenemos CCT)
     ( 'Personal',
       url_for('personal_bp.vista_personal',
               delegacion=(pl.delegacion.nombre if pl and pl.delegacion else ''),
               cct=((pl.cct if pl else persona.cct) or '')
       ) if ((pl and pl.cct) or persona.cct) else None),
-
-    # Persona (texto final)
     ( ((persona.apellido_paterno|default('')) ~ ' ' ~
        (persona.apellido_materno|default('')) ~ ' ' ~
        (persona.nombre|default('')) )|trim, None )
@@ -57,9 +49,17 @@
 </a>
 
 
-<a href="{{ url_for('dashboard_bp.dashboard') }}" class="btn btn-secondary">
-  ⬅️ Regresar al Menú principal
+{% if persona.cct %}
+<a
+  href="{{ url_for(
+        'personal_bp.vista_personal',
+        delegacion=(persona.plantel.delegacion.nombre if persona.plantel and persona.plantel.delegacion else ''),
+        cct=persona.cct
+  ) }}"
+  class="btn btn-secondary">
+  ⬅️ Regresar a Personal
 </a>
+{% endif %}
 
 <div class="container mt-4">
 
@@ -207,8 +207,11 @@
 
 
 
-      <strong>{{ usuarios_por_id[obs.usuario_id].nombre if obs.usuario_id in usuarios_por_id else 'Usuario' }}</strong>
-      <em class="text-muted">({{ obs.fecha.strftime('%d/%m/%Y %H:%M') }})</em><br>
+      {% set u = usuarios_por_id.get(obs.usuario_id) %}
+      <strong>{{ (u.nombre if u and u.nombre else 'Usuario') }}</strong>
+      <em class="text-muted">
+        {% if obs.fecha %}({{ obs.fecha.strftime('%d/%m/%Y %H:%M') }}){% endif %}
+      </em><br>
 
       {% if current_user.rol == 'admin' %}
   <div class="d-flex align-items-start gap-2">
