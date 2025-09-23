@@ -2,9 +2,12 @@
 {% block title %}Detalle del Personal{% endblock %}
 
 {% import '_breadcrumbs.html' as bc %}
+
+{# Puedes definir pl una sola vez aquí si quieres #}
 {% set pl = persona.plantel %}
 
 {% block breadcrumbs %}
+  {# (Opcional) redefinir pl aquí si prefieres #}
   {% set pl = persona.plantel %}
   {{ bc.render_breadcrumbs([
     ('Inicio', url_for('dashboard_bp.dashboard')),
@@ -24,6 +27,7 @@
   ]) }}
 {% endblock %}
 
+{% block content %}
 
 {% macro campo(label, value) -%}
   <div class="col-md-4 mb-2">
@@ -32,22 +36,9 @@
   </div>
 {%- endmacro %}
 
-
 <a href="{{ url_for('personal_bp.ver_historial', entidad='personal', id=persona.id) }}" class="btn btn-outline-secondary">
   📜 Ver historial de cambios
 </a>
-
-
-<a
-  href="{{ url_for(
-        'personal_bp.vista_personal',
-        delegacion=(persona.plantel.delegacion.nombre if persona.plantel and persona.plantel.delegacion else ''),
-        cct=persona.cct
-  ) }}"
-  class="btn btn-secondary">
-  ⬅️ Regresar a Personal
-</a>
-
 
 {% if persona.cct %}
 <a
@@ -61,11 +52,14 @@
 </a>
 {% endif %}
 
+<a href="{{ url_for('dashboard_bp.dashboard') }}" class="btn btn-secondary">
+  ⬅️ Regresar al Menú principal
+</a>
+
 <div class="container mt-4">
 
   <h4 class="mb-3">Detalle del personal: <strong>{{ persona.apellido_paterno }} {{ persona.apellido_materno }} {{ persona.nombre }}</strong></h4>
 
-  {# ✅ Versión segura (usa persona.plantel y valida None) #}
   {% set pl = persona.plantel %}
   {% if pl %}
     <div class="alert alert-secondary py-2">
@@ -81,10 +75,9 @@
     </div>
   {% endif %}
 
+</div>
 
-  </div>
-
-  <div class="d-flex gap-2 mt-2">
+<div class="d-flex gap-2 mt-2">
   <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modal-editar-personal">
     ✏️ Editar
   </button>
@@ -105,9 +98,7 @@
   </a>
 </div>
 
-
-  <!-- Lista de datos -->
-  <!-- ===== Detalle en bloques (v2) ===== -->
+<!-- ===== Detalle en bloques (v2) ===== -->
 <h5 class="mt-4">Identificación</h5>
 <div class="row">
   {{ campo('NUM', persona.num) }}
@@ -129,8 +120,8 @@
 
 <h5 class="mt-4">Domicilio (persona)</h5>
 <div class="row">
-  {{ campo('DP_CALLE', persona.domicilio) }}      {# v2 DP_CALLE → campo BD 'domicilio' #}
-  {{ campo('DP_NUM_EXT', persona.numero) }}       {# v2 DP_NUM_EXT → 'numero'          #}
+  {{ campo('DP_CALLE', persona.domicilio) }}
+  {{ campo('DP_NUM_EXT', persona.numero) }}
   {{ campo('DP_NUM_INT', persona.dp_num_int) }}
   {{ campo('DP_CRUCE1', persona.dp_cruce1) }}
   {{ campo('DP_CRUCE2', persona.dp_cruce2) }}
@@ -178,14 +169,9 @@
   {{ campo('FUN_SIN', persona.fun_sin) }}
 </div>
 
-
-
-</div>
-
 <hr>
 <h5>Observaciones registradas</h5>
 
-<!-- Formulario para agregar nueva -->
 <form method="POST" action="{{ url_for('personal_bp.agregar_observacion', personal_id=persona.id) }}" class="mb-3">
   <div class="input-group">
     <textarea name="texto" class="form-control" placeholder="Escribe una observación..." required></textarea>
@@ -193,9 +179,6 @@
   </div>
 </form>
 
-
-
-<!-- Lista de observaciones -->
 <div style="max-height: 300px; overflow-y: auto;">
   {% for obs in persona.observaciones %}
     <style>
@@ -204,9 +187,6 @@
 
     <div class="border rounded p-2 mb-2 small position-relative
                 {{ 'obs-adscripcion' if 'Motivo de cambio de adscripción:' in (obs.texto or '') else 'bg-light' }}">
-
-
-
       {% set u = usuarios_por_id.get(obs.usuario_id) %}
       <strong>{{ (u.nombre if u and u.nombre else 'Usuario') }}</strong>
       <em class="text-muted">
@@ -214,26 +194,21 @@
       </em><br>
 
       {% if current_user.rol == 'admin' %}
-  <div class="d-flex align-items-start gap-2">
-    
-    <!-- Formulario para editar -->
-    <form method="POST" action="{{ url_for('personal_bp.editar_observacion', obs_id=obs.id) }}">
       <div class="d-flex align-items-start gap-2">
-        <textarea name="nuevo_texto" class="form-control form-control-sm" rows="2" style="width: 1100px;">{{ obs.texto }}</textarea>
-        <button class="btn btn-sm btn-success mt-1" type="submit" title="Guardar">💾</button>
+        <form method="POST" action="{{ url_for('personal_bp.editar_observacion', obs_id=obs.id) }}">
+          <div class="d-flex align-items-start gap-2">
+            <textarea name="nuevo_texto" class="form-control form-control-sm" rows="2" style="width: 1100px;">{{ obs.texto }}</textarea>
+            <button class="btn btn-sm btn-success mt-1" type="submit" title="Guardar">💾</button>
+          </div>
+        </form>
+
+        <form method="POST" action="{{ url_for('personal_bp.eliminar_observacion', obs_id=obs.id) }}" onsubmit="return confirm('¿Eliminar esta observación?')">
+          <button class="btn btn-sm btn-danger mt-1" type="submit" title="Eliminar">🗑️</button>
+        </form>
       </div>
-    </form>
-
-    <!-- Formulario para eliminar -->
-    <form method="POST" action="{{ url_for('personal_bp.eliminar_observacion', obs_id=obs.id) }}" onsubmit="return confirm('¿Eliminar esta observación?')">
-      <button class="btn btn-sm btn-danger mt-1" type="submit" title="Eliminar">🗑️</button>
-    </form>
-
-  </div>
-{% else %}
-  {{ obs.texto }}
-{% endif %}
-
+      {% else %}
+        {{ obs.texto }}
+      {% endif %}
     </div>
 
   {% else %}
@@ -241,21 +216,15 @@
   {% endfor %}
 </div>
 
-
 <!-- Modal de edición -->
 <div class="modal fade" id="modal-editar-personal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-centered">
     <div class="modal-content">
       <form method="POST" action="{{ url_for('personal_bp.editar_personal', id=persona.id) }}">
-        <!-- 🔒 Siempre mandar el CCT actual -->
         <input type="hidden" name="cct" value="{{ persona.cct }}">
-
         <div class="modal-header">...</div>
-
         <div class="modal-body">
           <div class="row g-2">
-
-            <!-- 👇 Aquí el campo SOLO LECTURA para mostrar el CCT -->
             <div class="col-md-4">
               <label class="form-label">CCT de adscripción</label>
               <input
@@ -264,7 +233,7 @@
                 value="{{ persona.cct }}{% if persona.plantel %} — {{ persona.plantel.nombre }}{% endif %}"
                 readonly>
             </div>
-            
+
             {% for label, name, type, value, options in [
               ('Apellido paterno', 'apellido_paterno', 'text', persona.apellido_paterno, None),
               ('Apellido materno', 'apellido_materno', 'text', persona.apellido_materno, None),
@@ -290,7 +259,6 @@
               ('Teléfono 2 (DP_TEL2)', 'tel2', 'text', persona.tel2, None),
               ('Correo electrónico', 'correo_electronico', 'email', persona.correo_electronico, None),
 
-            
               ('NUM', 'num', 'text', persona.num, None),
               ('Número interior (DP_NUM_INT)', 'dp_num_int', 'text', persona.dp_num_int, None),
               ('Cruce 1 (DP_CRUCE1)', 'dp_cruce1', 'text', persona.dp_cruce1, None),
@@ -337,16 +305,13 @@
                         oninput="this.value=this.value.toUpperCase()"
                         pattern="^[A-Z]{4}\d{6}[HM][A-Z]{5}[0-9A-Z]\d$"
                         title="CURP inválido. Debe tener 18 caracteres, en mayúsculas." required>
-
-
                 {% elif name == 'rfc' %}
                   <input type="text" name="rfc" value="{{ value }}" class="form-control text-uppercase"
                         oninput="this.value=this.value.toUpperCase()"
                         pattern="^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{2,3}$"
                         title="RFC inválido (12 o 13 caracteres, mayúsculas)." required>
-
-{% else %}
-  <input type="{{ type }}" name="{{ name }}" value="{{ value }}" class="form-control">
+                {% else %}
+                  <input type="{{ type }}" name="{{ name }}" value="{{ value }}" class="form-control">
                 {% endif %}
               </div>
             {% endfor %}
@@ -367,8 +332,7 @@
     <div class="modal-content">
       <form method="POST"
             action="{{ url_for('personal_bp.editar_personal', id=persona.id) }}"
-            novalidate>   
-
+            novalidate>
         <div class="modal-header">
           <h5 class="modal-title">Cambio de adscripción</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -393,7 +357,6 @@
               <textarea id="motivo" name="motivo" class="form-control" rows="3" required placeholder="Ejemplo: Reasignación por necesidades del servicio."></textarea>
             </div>
           </div>
-          
         </div>
         <div class="modal-footer">
           <button class="btn btn-success" type="submit">💾 Confirmar cambio</button>
@@ -405,13 +368,13 @@
 </div>
 {% endif %}
 
-
 <script>
   const endpoint = "{{ url_for('personal_bp.obtener_ccts_por_nivel') }}";
-
   document.addEventListener("DOMContentLoaded", () => {
     const nivelSelect = document.getElementById("nivel");
     const cctSelect = document.getElementById("nuevo_cct");
+
+    if (!nivelSelect || !cctSelect) return;
 
     nivelSelect.addEventListener("change", async () => {
       const nivel = nivelSelect.value;
@@ -426,7 +389,7 @@
         const response = await fetch(`${endpoint}?nivel=${encodeURIComponent(nivel)}`);
         const data = await response.json();
 
-        if (data.length === 0) {
+        if (!Array.isArray(data) || data.length === 0) {
           cctSelect.innerHTML = '<option value="">No se encontraron CCTs</option>';
         } else {
           cctSelect.innerHTML = '<option value="">Selecciona un CCT</option>';
@@ -444,5 +407,4 @@
   });
 </script>
 
-
-{% endblock %}
+{% endblock content %}
