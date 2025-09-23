@@ -52,24 +52,25 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # Inicializar extensiones
     db.init_app(app)
     mail.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = 'auth_bp.login'
 
-    # 🔸 IMPORTANTE: asegurar que Alembic "vea" todos los modelos
     with app.app_context():
-        import models  # importa tus modelos una vez cargada la app
+        import models
 
-    # Inicializar Migrate ya con la app creada
     migrate.init_app(app, db, compare_type=True, render_as_batch=True)
 
     @app.context_processor
-    def inject_role_helpers():
+    def inject_helpers():
         def has_role(*roles):
-            return getattr(current_user, "is_authenticated", False) and getattr(current_user, "rol", None) in roles
-        return dict(has_role=has_role)
+            return (
+                getattr(current_user, "is_authenticated", False)
+                and getattr(current_user, "rol", None) in roles
+            )
+        # 👇 aquí inyectas también `can`
+        return dict(has_role=has_role, can=can)
 
     # Registrar blueprints
     from routes.auth_routes import auth_bp
@@ -112,6 +113,4 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=True, host='0.0.0.0', port=port)
 
-@app.context_processor
-def inject_can():
-    return dict(can=can)
+
