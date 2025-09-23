@@ -165,3 +165,10 @@ def require_same_delegacion(record_getter):
             return fn(*a, **kw)
         return wrapper
     return deco
+
+def has_role(*roles):
+    """True si el usuario actual está autenticado y su rol está en roles."""
+    return (
+        getattr(current_user, "is_authenticated", False)
+        and getattr(current_user, "rol", None) in roles
+    )
