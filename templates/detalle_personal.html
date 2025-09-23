@@ -1,6 +1,45 @@
 {% extends 'base.html' %}
 {% block title %}Detalle del Personal{% endblock %}
 
+{% import '_breadcrumbs.html' as bc %}
+{% set pl = persona.plantel %}
+
+{% block breadcrumbs %}
+  {% set pl = persona.plantel %}
+  {{ bc.render_breadcrumbs([
+    ('Inicio', url_for('dashboard_bp.dashboard')),
+    ('Delegaciones', url_for('delegaciones_bp.vista_delegaciones')),
+
+    # Delegación (link solo si tenemos ID)
+    ( pl.delegacion.nombre if pl and pl.delegacion else 'Delegación',
+      url_for('delegaciones_bp.vista_ccts_por_delegacion',
+              delegacion_id=pl.delegacion_id) if pl and pl.delegacion_id else None),
+
+    # Plantel (solo texto)
+    ( (pl.nombre ~ ' (' ~ pl.cct ~ ')') if pl else (persona.cct or 'Plantel'), None),
+
+    # Lista de Personal (link si tenemos CCT)
+    ( 'Personal',
+      url_for('personal_bp.vista_personal',
+              delegacion=(pl.delegacion.nombre if pl and pl.delegacion else ''),
+              cct=((pl.cct if pl else persona.cct) or '')
+      ) if ((pl and pl.cct) or persona.cct) else None),
+
+    # Persona (texto final)
+    ( ((persona.apellido_paterno|default('')) ~ ' ' ~
+       (persona.apellido_materno|default('')) ~ ' ' ~
+       (persona.nombre|default('')) )|trim, None )
+  ]) }}
+{% endblock %}
+
+
+{% macro campo(label, value) -%}
+  <div class="col-md-4 mb-2">
+    <small class="text-muted">{{ label }}</small>
+    <div class="fw-semibold">{{ value if value not in (None, '') else '—' }}</div>
+  </div>
+{%- endmacro %}
+
 
 <a href="{{ url_for('personal_bp.ver_historial', entidad='personal', id=persona.id) }}" class="btn btn-outline-secondary">
   📜 Ver historial de cambios
