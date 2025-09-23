@@ -9,7 +9,7 @@
     ('Inicio', url_for('dashboard_bp.dashboard')),
     ('Delegaciones', url_for('delegaciones_bp.vista_delegaciones')),
     ( pl.delegacion.nombre if pl and pl.delegacion else 'Delegación',
-      url_for('delegaciones_bp.vista_ccts_por_delegacion', delegacion_id=pl.delegacion_id) if pl and pl.delegacion_id else None),
+      url_for('delegaciones_bp.vista_delegaciones', delegacion_id=pl.delegacion_id) if pl and pl.delegacion_id else None),
 
     # 👇 Este era el que fallaba: SIEMPRE como (label, None)
     ( (pl.nombre ~ ' (' ~ pl.cct ~ ')') if pl else (persona.cct or 'Plantel'), None),
