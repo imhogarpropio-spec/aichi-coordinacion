@@ -46,12 +46,22 @@ document.addEventListener('DOMContentLoaded', function(){
   const btn = document.getElementById('btn-abrir-tabla');
   if(!sel || !btn) return;
 
-  const baseTabla = "{{ url_for('delegaciones_bp.tabla_personal_delegacion', delegacion_id=0) }}";
+  const base = "{{ url_for('delegaciones_bp.tabla_personal_delegacion', delegacion_id=0) }}";
+  // p.ej. base === "/delegaciones/0/tabla-personal"
 
-  btn.addEventListener('click', function(){
-    const id = sel.value;
+  btn.addEventListener('click', function(e){
+    e.preventDefault();
+    const id = sel.value && sel.value.trim();
     if(!id){ alert('Selecciona una delegación.'); return; }
-    const url = baseTabla.replace(/0$/, id);
+
+    // reemplaza SOLO el "/0" antes de "/tabla-personal"
+    const url = base.replace(/\/0(?=\/tabla-personal$)/, `/${id}`);
+
+    if (/\/0\/tabla-personal$/.test(url)) {
+      console.error('No se pudo construir la URL destino:', url);
+      alert('No se pudo abrir la tabla. Revisa la consola.');
+      return;
+    }
     window.location.href = url;
   });
 });
