@@ -18,6 +18,44 @@
 
 <h4 class="mb-4">Delegaciones por Nivel</h4>
 
+<div class="card p-3 mb-4">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-8">
+      <label for="sel-delegacion" class="form-label">Selecciona una delegación</label>
+      <select id="sel-delegacion" class="form-select">
+        <option value="">— elige una delegación —</option>
+        {# usamos el diccionario niveles que ya tienes para rellenar #}
+        {% for nivel, dels in niveles.items() %}
+          <optgroup label="{{ nivel }}">
+            {% for d in dels %}
+              <option value="{{ d.id }}">{{ d.nombre }} — {{ d.nivel }}</option>
+            {% endfor %}
+          </optgroup>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4 d-grid">
+      <button class="btn btn-primary" id="btn-abrir-tabla">Abrir tabla de personal</button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  const sel = document.getElementById('sel-delegacion');
+  const btn = document.getElementById('btn-abrir-tabla');
+  if(!sel || !btn) return;
+
+  btn.addEventListener('click', function(){
+    const id = sel.value;
+    if(!id){ alert('Selecciona una delegación.'); return; }
+    // 👇 ruta que muestra tabla_personal.html para esa delegación
+    const url = "{{ url_for('delegaciones_bp.vista_tabla_personal', delegacion_id='__ID__') }}".replace('__ID__', id);
+    window.location.href = url;
+  });
+});
+</script>
+
 <!-- ✅ Alerta de éxito única con autocierre -->
 {% with mensajes = get_flashed_messages(with_categories=true) %}
   {% if mensajes %}
