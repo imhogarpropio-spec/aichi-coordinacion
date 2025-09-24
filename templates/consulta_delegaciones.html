@@ -46,11 +46,12 @@ document.addEventListener('DOMContentLoaded', function(){
   const btn = document.getElementById('btn-abrir-tabla');
   if(!sel || !btn) return;
 
+  const baseTabla = "{{ url_for('delegaciones_bp.tabla_personal_delegacion', delegacion_id=0) }}";
+
   btn.addEventListener('click', function(){
     const id = sel.value;
     if(!id){ alert('Selecciona una delegación.'); return; }
-    // 👇 ruta que muestra tabla_personal.html para esa delegación
-    const url = "{{ url_for('delegaciones_bp.vista_tabla_personal', delegacion_id='__ID__') }}".replace('__ID__', id);
+    const url = baseTabla.replace(/0$/, id);
     window.location.href = url;
   });
 });
