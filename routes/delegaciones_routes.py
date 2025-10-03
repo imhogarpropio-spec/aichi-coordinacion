@@ -366,25 +366,38 @@ def eliminar_delegacion(id):
     nivel = deleg.nivel
 
     try:
+        # 1) Subquery de CCTs que pertenecen a la delegación
+        ccts_subq = db.session.query(Plantel.cct).filter(Plantel.delegacion_id == id).subquery()
+
+        # 2) Borra PERSONAL cuyo CCT está en esos planteles
+        deleted_personal = (db.session.query(Personal)
+                            .filter(Personal.cct.in_(db.session.query(ccts_subq.c.cct)))
+                            .delete(synchronize_session=False))
+
+        # 3) Borra PLANTELES de la delegación
+        deleted_planteles = (db.session.query(Plantel)
+                             .filter(Plantel.delegacion_id == id)
+                             .delete(synchronize_session=False))
+
+        # 4) Borra la DELEGACIÓN
         db.session.delete(deleg)
+
         db.session.commit()
 
-        # ✅ Notificación correcta (delegación, no cct)
         registrar_notificacion(
-            f"{current_user.nombre} eliminó la delegación '{nombre}' (nivel {nivel})",
+            f"{current_user.nombre} eliminó la delegación '{nombre}' (nivel {nivel}) "
+            f"con {deleted_planteles} planteles y {deleted_personal} personas asociadas",
             tipo="delegacion"
         )
-
-        flash(f"Delegación '{nombre}' eliminada.", "success")
-
-    except IntegrityError:
-        db.session.rollback()
-        flash(f"No se puede eliminar '{nombre}' porque tiene planteles asociados.", "warning")
-        # Si quieres permitir borrado en cascada, hay que configurar el modelo con cascade / ondelete.
+        flash(
+            f"Delegación '{nombre}' eliminada. "
+            f"Planteles borrados: {deleted_planteles}. Personal borrado: {deleted_personal}.",
+            "success"
+        )
 
     except Exception as e:
         db.session.rollback()
-        flash(f"Error al eliminar la delegación: {e}", "danger")
+        flash(f"Error al eliminar en cascada la delegación: {e}", "danger")
 
     return redirect(url_for('delegaciones_bp.vista_delegaciones'))
 
