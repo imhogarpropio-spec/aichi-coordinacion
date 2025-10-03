@@ -40,6 +40,11 @@
   </div>
 </div>
 
+<form id="form-eliminar-deleg" method="post" style="display:none;">
+  {{ csrf_token() }}
+</form>
+
+
 <script>
 document.addEventListener('DOMContentLoaded', function(){
   const sel = document.getElementById('sel-delegacion');
@@ -170,10 +175,11 @@ document.addEventListener('DOMContentLoaded', function(){
           <div class="card-actions">
             <button class="btn btn-outline-success btn-sm me-1" data-bs-toggle="modal" data-bs-target="#modal-{{ delegacion.id }}" title="Editar">✏️</button>
             <button
-                class="btn btn-outline-danger btn-sm"
-                onclick="eliminarDelegacion(`{{ url_for('delegaciones_bp.eliminar_delegacion', id=delegacion.id) }}`)"
-                title="Eliminar">
-                🗑️
+              type="button"
+              class="btn btn-outline-danger btn-sm"
+              onclick="eliminarDelegacionPost('{{ url_for('delegaciones_bp.eliminar_delegacion', id=delegacion.id) }}')"
+              title="Eliminar">
+              🗑️
             </button>
           </div>
         </div>
@@ -231,11 +237,16 @@ document.addEventListener('DOMContentLoaded', function(){
 
 <!-- 🔧 Scripts -->
 <script>
-  function eliminarDelegacion(url) {
-    if (confirm('¿Estás seguro de eliminar esta delegación?')) {
-      window.location.href = url;
-    }
+  function eliminarDelegacionPost(url){
+    if (!confirm('¿Estás seguro de eliminar esta delegación?')) return;
+    const f = document.getElementById('form-eliminar-deleg');
+    f.action = url;   // /eliminar_delegacion/<id>
+    f.submit();       // ← POST real
   }
+
+  // (puedes dejar tu autocierre de alertas igual)
+</script>
+
 
   // ✅ Autocerrar alerta después de 1 segundo
   setTimeout(() => {
