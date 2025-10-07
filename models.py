@@ -69,15 +69,18 @@ class Plantel(db.Model):
     coordenadas_gps = db.Column(db.String(100))
     estado = db.Column(db.String(50), default='HIDALGO')
 
-    delegacion_id = db.Column(db.Integer, db.ForeignKey('delegacion.id'), nullable=False)
+    delegacion_id = db.Column(
+        db.Integer,
+        db.ForeignKey('delegacion.id', ondelete='CASCADE'),
+        nullable=False
+    )
     delegacion = db.relationship('Delegacion', back_populates='planteles')
 
     personal = db.relationship(
         'Personal',
-        backref='plantel',                     # crea el atributo p.plantel
+        backref='plantel',
         cascade='all, delete-orphan',
-        lazy='dynamic',
-        primaryjoin=lambda: foreign(Personal.cct) == Plantel.cct
+        passive_deletes=True
     )
 
 
@@ -145,10 +148,19 @@ class Personal(db.Model):
     fun_sin = db.Column(db.Text)
 
     # FK
-    cct = db.Column(db.String(15), db.ForeignKey('plantel.cct'))
+    cct = db.Column(
+        db.String(15),
+        db.ForeignKey('plantel.cct', ondelete='CASCADE'),  # requiere que plantel.cct sea UNIQUE/PK
+        nullable=False
+    )
 
     # Relaciones
-    observaciones = db.relationship('ObservacionPersonal', backref='persona', lazy='dynamic')
+    observaciones = db.relationship(
+        'ObservacionPersonal',
+        backref='persona',
+        cascade='all, delete-orphan',
+        passive_deletes=True
+    )
     # OJO: NO declares aquí `plantel = db.relationship(...)` si en Plantel ya tienes:
     # personal = db.relationship('Personal', backref='plantel', ...)
 
@@ -167,7 +179,12 @@ class Delegacion(db.Model):
     nombre = db.Column(db.String(100), unique=True, nullable=False)
     nivel = db.Column(db.String(50), nullable=False)
     delegado = db.Column(db.String(250))  # <-- campo nuevo
-    planteles = db.relationship('Plantel', back_populates='delegacion', cascade='all, delete-orphan')
+    planteles = db.relationship(
+        'Plantel',
+        backref='delegacion',
+        cascade='all, delete-orphan',
+        passive_deletes=True
+    )
 
 class HistorialCambios(db.Model):
     __tablename__ = 'historial_cambios'
@@ -185,7 +202,11 @@ class HistorialCambios(db.Model):
 
 class ObservacionPersonal(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    personal_id = db.Column(db.Integer, db.ForeignKey('personal.id'), nullable=False)
+    personal_id = db.Column(
+        db.Integer,
+        db.ForeignKey('personal.id', ondelete='CASCADE'),
+        nullable=False
+    )
     usuario_id = db.Column(db.Integer, nullable=False)  # sin foreign key porque está en otra BD
     texto = db.Column(db.Text, nullable=False)
     fecha = db.Column(db.DateTime, default=lambda: datetime.now(timezone('America/Mexico_City')))
