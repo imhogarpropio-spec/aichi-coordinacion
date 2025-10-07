@@ -74,7 +74,11 @@ class Plantel(db.Model):
         db.ForeignKey('delegacion.id', ondelete='CASCADE'),
         nullable=False
     )
-    delegacion = db.relationship('Delegacion', back_populates='planteles')
+
+    delegacion = db.relationship(
+        'Delegacion',
+        back_populates='planteles'        # ← debe hacer match con lo de arriba
+    )
 
     personal = db.relationship(
         'Personal',
@@ -181,7 +185,7 @@ class Delegacion(db.Model):
     delegado = db.Column(db.String(250))  # <-- campo nuevo
     planteles = db.relationship(
         'Plantel',
-        backref='delegacion',
+        back_populates='delegacion',      # ← antes era backref='delegacion'
         cascade='all, delete-orphan',
         passive_deletes=True
     )
